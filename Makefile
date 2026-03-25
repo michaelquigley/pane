@@ -4,7 +4,7 @@ frontend:
 	cd ui && npm install && npm run build
 
 build: frontend
-	go build -o build/pane ./cmd/pane
+	go install ./...
 
 dev:
 	cd ui && npm run dev &
