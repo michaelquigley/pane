@@ -10,13 +10,19 @@ import (
 )
 
 type API struct {
-	cfg *config.Config
-	llm *llm.Client
-	mcp *mcp.Manager
+	cfg       *config.Config
+	llm       *llm.Client
+	mcp       *mcp.Manager
+	approvals *ApprovalRegistry
 }
 
 func NewAPI(cfg *config.Config, llmClient *llm.Client, mcpMgr *mcp.Manager) *API {
-	return &API{cfg: cfg, llm: llmClient, mcp: mcpMgr}
+	return &API{
+		cfg:       cfg,
+		llm:       llmClient,
+		mcp:       mcpMgr,
+		approvals: NewApprovalRegistry(),
+	}
 }
 
 func (a *API) RegisterRoutes(mux *http.ServeMux) {
@@ -25,6 +31,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/chat", a.handleChat)
 	mux.HandleFunc("GET /api/tools", a.handleTools)
 	mux.HandleFunc("POST /api/tools/toggle", a.handleToolToggle)
+	mux.HandleFunc("POST /api/tools/approve", a.handleApprove)
 }
 
 func (a *API) handleHealth(w http.ResponseWriter, _ *http.Request) {

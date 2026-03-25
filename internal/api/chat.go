@@ -2,9 +2,7 @@ package api
 
 import (
 	"encoding/json"
-	"io"
 	"net/http"
-	"strings"
 
 	"github.com/michaelquigley/df/dl"
 	"github.com/michaelquigley/pane/internal/llm"
@@ -44,43 +42,9 @@ func (a *API) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chatReq := &llm.ChatRequest{
-		Model:    model,
-		Messages: req.Messages,
-	}
+	tools := a.mcp.GetEnabledTools(req.ToolsDisabled)
 
-	stream, err := a.llm.StreamChat(r.Context(), chatReq)
-	if err != nil {
-		dl.Errorf("starting chat stream: %v", err)
-		code := "upstream_error"
-		if strings.Contains(err.Error(), "unreachable") {
-			code = "upstream_unreachable"
-		}
-		_ = sw.Send("error", sse.ErrorData{Code: code, Message: err.Error()})
-		return
-	}
-	defer stream.Close()
-
-	for {
-		chunk, err := stream.Recv()
-		if err != nil {
-			if err == io.EOF {
-				_ = sw.SendDone()
-				return
-			}
-			dl.Errorf("stream error: %v", err)
-			_ = sw.Send("error", sse.ErrorData{Code: "upstream_error", Message: err.Error()})
-			return
-		}
-
-		if len(chunk.Choices) == 0 {
-			continue
-		}
-
-		delta := chunk.Choices[0].Delta
-
-		if delta.Content != nil && *delta.Content != "" {
-			_ = sw.Send("delta", sse.DeltaData{Content: *delta.Content})
-		}
+	if err := llm.RunToolLoop(r.Context(), a.llm, req.Messages, model, tools, a.mcp, sw, a.approvals); err != nil {
+		dl.Errorf("tool loop: %v", err)
 	}
 }
