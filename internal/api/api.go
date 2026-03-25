@@ -6,21 +6,25 @@ import (
 
 	"github.com/michaelquigley/pane/internal/config"
 	"github.com/michaelquigley/pane/internal/llm"
+	"github.com/michaelquigley/pane/internal/mcp"
 )
 
 type API struct {
 	cfg *config.Config
 	llm *llm.Client
+	mcp *mcp.Manager
 }
 
-func NewAPI(cfg *config.Config, llmClient *llm.Client) *API {
-	return &API{cfg: cfg, llm: llmClient}
+func NewAPI(cfg *config.Config, llmClient *llm.Client, mcpMgr *mcp.Manager) *API {
+	return &API{cfg: cfg, llm: llmClient, mcp: mcpMgr}
 }
 
 func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/health", a.handleHealth)
 	mux.HandleFunc("GET /api/models", a.handleModels)
 	mux.HandleFunc("POST /api/chat", a.handleChat)
+	mux.HandleFunc("GET /api/tools", a.handleTools)
+	mux.HandleFunc("POST /api/tools/toggle", a.handleToolToggle)
 }
 
 func (a *API) handleHealth(w http.ResponseWriter, _ *http.Request) {

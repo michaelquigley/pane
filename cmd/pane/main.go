@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/michaelquigley/pane/internal/api"
 	"github.com/michaelquigley/pane/internal/config"
 	"github.com/michaelquigley/pane/internal/llm"
+	"github.com/michaelquigley/pane/internal/mcp"
 	"github.com/michaelquigley/pane/ui"
 	"github.com/spf13/cobra"
 )
@@ -43,8 +45,12 @@ func run(_ *cobra.Command, _ []string) {
 
 	dl.Debugf("config: endpoint=%s model=%s listen=%s", cfg.Endpoint, cfg.Model, cfg.Listen)
 
+	mcpMgr := mcp.NewManager(cfg.MCP)
+	mcpMgr.Start(context.Background())
+	defer mcpMgr.Stop()
+
 	llmClient := llm.NewClient(cfg.Endpoint, cfg.Model)
-	a := api.NewAPI(cfg, llmClient)
+	a := api.NewAPI(cfg, llmClient, mcpMgr)
 
 	mux := http.NewServeMux()
 	a.RegisterRoutes(mux)
