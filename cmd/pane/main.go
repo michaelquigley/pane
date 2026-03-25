@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -9,7 +8,9 @@ import (
 	"strings"
 
 	"github.com/michaelquigley/df/dl"
+	"github.com/michaelquigley/pane/internal/api"
 	"github.com/michaelquigley/pane/internal/config"
+	"github.com/michaelquigley/pane/internal/llm"
 	"github.com/michaelquigley/pane/ui"
 	"github.com/spf13/cobra"
 )
@@ -42,12 +43,11 @@ func run(_ *cobra.Command, _ []string) {
 
 	dl.Debugf("config: endpoint=%s model=%s listen=%s", cfg.Endpoint, cfg.Model, cfg.Listen)
 
-	mux := http.NewServeMux()
+	llmClient := llm.NewClient(cfg.Endpoint, cfg.Model)
+	a := api.NewAPI(cfg, llmClient)
 
-	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-	})
+	mux := http.NewServeMux()
+	a.RegisterRoutes(mux)
 
 	handler := ui.Middleware(mux)
 
