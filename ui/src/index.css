@@ -1,0 +1,21 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'PT Serif', Georgia, serif;
+  background: #faf8f5;
+  color: #2d2a26;
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #1e1c1a;
+    color: #e8e4df;
+  }
+}

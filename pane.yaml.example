@@ -1,0 +1,39 @@
+# pane configuration
+# config cascade (lowest to highest priority):
+#   compiled defaults -> ~/.config/pane/config.yaml -> ./pane.yaml -> --config flag
+
+# OpenAI-compatible endpoint to proxy to
+endpoint: http://localhost:18080/v1
+
+# default model (overridable in UI)
+model: qwen2.5:14b
+
+# system prompt (overridable in UI)
+system: "You are a helpful assistant."
+
+# listen address
+listen: 127.0.0.1:8400
+
+# MCP servers
+mcp:
+  # tool namespace separator (default: "_")
+  # e.g., with "_": filesystem_read_file
+  separator: "_"
+
+  servers:
+    filesystem:
+      command: npx
+      args:
+        - -y
+        - "@modelcontextprotocol/server-filesystem"
+        - "/home/michael/projects"
+      env:
+        NODE_ENV: production
+      approve: true
+      timeout: 30s
+
+    baabhive:
+      command: /home/michael/bin/baabhive-mcp
+      args:
+        - --db
+        - /home/michael/data/baabhive.db
