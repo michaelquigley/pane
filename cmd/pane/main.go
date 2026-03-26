@@ -82,7 +82,7 @@ func run(_ *cobra.Command, _ []string) {
 		}
 	}()
 
-	dl.Infof("listening on %s", cfg.Listen)
+	dl.Infof("listening on http://%s", cfg.Listen)
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		dl.Fatalf("server: %v", err)
 	}
