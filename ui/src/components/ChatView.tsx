@@ -70,7 +70,20 @@ export function ChatView({
           )}
 
           {error && (
-            <div className="error-message">{error}</div>
+            <div className="error-message">
+              {error}
+              {!isStreaming && (
+                <button
+                  className="retry-btn"
+                  onClick={() => {
+                    const lastUser = [...messages].reverse().find(m => m.role === 'user')
+                    if (lastUser?.content) onSend(lastUser.content)
+                  }}
+                >
+                  Retry
+                </button>
+              )}
+            </div>
           )}
 
           <div ref={bottomRef} />

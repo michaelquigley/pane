@@ -2,9 +2,11 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/michaelquigley/df/dd"
 )
@@ -57,7 +59,32 @@ func Load(configPath string) (*Config, error) {
 			return nil, err
 		}
 	}
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
 	return cfg, nil
+}
+
+func (c *Config) Validate() error {
+	if c.Endpoint == "" {
+		return fmt.Errorf("endpoint is required")
+	}
+	if c.Listen == "" {
+		return fmt.Errorf("listen address is required")
+	}
+	if c.MCP != nil {
+		for name, sc := range c.MCP.Servers {
+			if sc.Command == "" {
+				return fmt.Errorf("mcp server %q: command is required", name)
+			}
+			if sc.Timeout != "" {
+				if _, err := time.ParseDuration(sc.Timeout); err != nil {
+					return fmt.Errorf("mcp server %q: invalid timeout %q: %w", name, sc.Timeout, err)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func mergeIfExists(cfg *Config, path string) error {

@@ -23,6 +23,9 @@ export function useChat() {
     setActiveToolCalls(new Map())
     setError(null)
 
+    // abort any in-flight request
+    abortRef.current?.abort()
+
     const controller = new AbortController()
     abortRef.current = controller
 
@@ -64,6 +67,7 @@ export function useChat() {
       // track finalized messages to append (assistant + tool results per round)
       const finalizedMessages: Message[] = []
 
+      let receivedDone = false
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
@@ -77,6 +81,7 @@ export function useChat() {
           if (line.startsWith('event: ')) {
             currentEventType = line.slice(7).trim()
           } else if (line.startsWith('data: ') && currentEventType) {
+            if (currentEventType === 'done') receivedDone = true
             const data = line.slice(6)
             try {
               const parsed = JSON.parse(data)
@@ -98,6 +103,19 @@ export function useChat() {
             }
             currentEventType = ''
           }
+        }
+      }
+
+      // stream ended without done event — finalize partial content
+      if (!receivedDone && (contentAccum || finalizedMessages.length > 0)) {
+        if (contentAccum) {
+          finalizedMessages.push({ role: 'assistant', content: contentAccum })
+        }
+        setMessages([...allMessages, ...finalizedMessages])
+        setStreamingContent('')
+        setActiveToolCalls(new Map())
+        if (!error) {
+          setError('Connection lost')
         }
       }
     } catch (e) {

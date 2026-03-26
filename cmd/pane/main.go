@@ -5,8 +5,11 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/michaelquigley/df/dl"
 	"github.com/michaelquigley/pane/internal/api"
@@ -45,9 +48,14 @@ func run(_ *cobra.Command, _ []string) {
 
 	dl.Debugf("config: endpoint=%s model=%s listen=%s", cfg.Endpoint, cfg.Model, cfg.Listen)
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
 	mcpMgr := mcp.NewManager(cfg.MCP)
-	mcpMgr.Start(context.Background())
-	defer mcpMgr.Stop()
+	mcpMgr.Start(ctx)
 
 	llmClient := llm.NewClient(cfg.Endpoint, cfg.Model)
 	a := api.NewAPI(cfg, llmClient, mcpMgr)
@@ -57,10 +65,30 @@ func run(_ *cobra.Command, _ []string) {
 
 	handler := ui.Middleware(mux)
 
+	server := &http.Server{
+		Addr:    cfg.Listen,
+		Handler: handler,
+	}
+
+	go func() {
+		<-sigCh
+		dl.Infof("shutting down...")
+
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer shutdownCancel()
+
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			dl.Errorf("server shutdown: %v", err)
+		}
+	}()
+
 	dl.Infof("listening on %s", cfg.Listen)
-	if err := http.ListenAndServe(cfg.Listen, handler); err != nil {
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		dl.Fatalf("server: %v", err)
 	}
+
+	mcpMgr.Stop()
+	dl.Infof("stopped")
 }
 
 func main() {

@@ -48,6 +48,10 @@ func RunToolLoop(
 	approvals ApprovalRegistry,
 ) error {
 	for iteration := 0; iteration < maxToolLoopIterations; iteration++ {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
 		req := &ChatRequest{
 			Model:    model,
 			Messages: messages,

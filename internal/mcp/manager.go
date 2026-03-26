@@ -1,8 +1,10 @@
 package mcp
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -62,6 +64,7 @@ func (m *Manager) Start(ctx context.Context) {
 		}
 		si.status = "running"
 		dl.Infof("MCP server ready: %s (%d tools)", name, len(si.tools))
+		m.monitorStderr(name, si)
 	}
 }
 
@@ -97,6 +100,22 @@ func (m *Manager) startServer(ctx context.Context, si *ServerInstance) error {
 
 	si.tools = result.Tools
 	return nil
+}
+
+func (m *Manager) monitorStderr(name string, si *ServerInstance) {
+	stderr, ok := mcpclient.GetStderr(si.client)
+	if !ok {
+		return
+	}
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			dl.Warnf("MCP server %s (stderr): %s", name, scanner.Text())
+		}
+		if err := scanner.Err(); err != nil && err != io.EOF {
+			dl.Warnf("MCP server %s stderr reader: %v", name, err)
+		}
+	}()
 }
 
 func (m *Manager) Stop() {

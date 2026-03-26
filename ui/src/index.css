@@ -454,6 +454,26 @@ body {
   border-radius: var(--radius);
   border-left: 3px solid var(--error);
   font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.retry-btn {
+  background: none;
+  border: 1px solid var(--error);
+  color: var(--error);
+  padding: 4px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-family: var(--serif);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+  transition: background var(--transition);
+}
+
+.retry-btn:hover {
+  background: color-mix(in srgb, var(--error) 15%, transparent);
 }
 
 /* Conversation list */
