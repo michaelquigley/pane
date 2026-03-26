@@ -15,10 +15,25 @@ export default function App() {
   const [conversations, setConversations] = useLocalStorage<Conversation[]>('pane:conversations', [])
   const [activeId, setActiveId] = useLocalStorage<string | null>('pane:activeConversation', null)
   const [systemPrompt, setSystemPrompt] = useLocalStorage<string>('pane:systemPrompt', '')
+  const [configLoaded, setConfigLoaded] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [toolPanelOpen, setToolPanelOpen] = useState(false)
 
   const { models, selectedModel, setSelectedModel } = useModels()
+
+  // seed system prompt from backend config if user hasn't customized it
+  useEffect(() => {
+    if (configLoaded) return
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(data => {
+        if (data.system && !systemPrompt) {
+          setSystemPrompt(data.system)
+        }
+        setConfigLoaded(true)
+      })
+      .catch(() => setConfigLoaded(true))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const { tools, servers, disabledTools, toggleTool } = useTools()
   const chat = useChat()
 

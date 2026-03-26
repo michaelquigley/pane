@@ -27,6 +27,7 @@ func NewAPI(cfg *config.Config, llmClient *llm.Client, mcpMgr *mcp.Manager) *API
 
 func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/health", a.handleHealth)
+	mux.HandleFunc("GET /api/config", a.handleConfig)
 	mux.HandleFunc("GET /api/models", a.handleModels)
 	mux.HandleFunc("POST /api/chat", a.handleChat)
 	mux.HandleFunc("GET /api/tools", a.handleTools)
@@ -37,4 +38,12 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 func (a *API) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func (a *API) handleConfig(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"system": a.cfg.System,
+		"model":  a.cfg.Model,
+	})
 }
