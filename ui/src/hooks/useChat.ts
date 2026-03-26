@@ -5,7 +5,6 @@ interface SendMessageOptions {
   model: string
   systemPromptMode: SystemPromptMode
   systemPrompt: string
-  disabledTools: string[]
 }
 
 interface RequestSnapshot {
@@ -28,7 +27,7 @@ export function useChat() {
   ) => {
     lastRequestRef.current = {
       requestMessages,
-      options: { ...options, disabledTools: [...options.disabledTools] },
+      options: { ...options },
     }
 
     let committedMessages = requestMessages
@@ -56,7 +55,6 @@ export function useChat() {
         body: JSON.stringify({
           model: options.model,
           messages: requestMessages,
-          tools_disabled: options.disabledTools,
           system_prompt_mode: options.systemPromptMode,
           ...(options.systemPromptMode === 'custom' ? { system_prompt: options.systemPrompt } : {}),
         }),

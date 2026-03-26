@@ -18,16 +18,5 @@ export function useTools() {
   }, [])
 
   useEffect(() => { fetchTools() }, [fetchTools])
-
-  const toggleTool = useCallback((name: string, enabled: boolean) => {
-    fetch('/api/tools/toggle', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tool: name, enabled }),
-    }).then(() => fetchTools())
-  }, [fetchTools])
-
-  const disabledTools = tools.filter(t => !t.enabled).map(t => t.function.name)
-
-  return { tools, servers, disabledTools, toggleTool, loading }
+  return { tools, servers, loading, refreshTools: fetchTools }
 }

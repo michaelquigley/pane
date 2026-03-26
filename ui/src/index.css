@@ -734,18 +734,22 @@ body {
   font-weight: 400;
 }
 
-.tool-toggle {
+.tool-entry {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  cursor: pointer;
-  font-size: 0.8125rem;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
 }
 
-.tool-toggle-name {
+.tool-entry-name {
   font-family: var(--mono);
   font-size: 0.75rem;
+}
+
+.tool-entry-description {
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
 }
 
 .tool-panel-empty {

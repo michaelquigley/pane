@@ -14,7 +14,6 @@ import (
 type chatRequest struct {
 	Model            string        `json:"model"`
 	Messages         []llm.Message `json:"messages"`
-	ToolsDisabled    []string      `json:"tools_disabled"`
 	SystemPromptMode string        `json:"system_prompt_mode"`
 	SystemPrompt     string        `json:"system_prompt"`
 }
@@ -35,7 +34,7 @@ func (a *API) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tools := a.mcp.GetEnabledTools(req.ToolsDisabled)
+	tools := a.mcp.GetEnabledTools()
 
 	if err := llm.RunToolLoop(r.Context(), a.llm, req.Messages, model, tools, a.mcp, sw, a.approvals); err != nil {
 		dl.Errorf("tool loop: %v", err)

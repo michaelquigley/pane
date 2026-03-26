@@ -4,11 +4,10 @@ interface Props {
   tools: ToolInfo[]
   servers: Record<string, ServerStatus>
   separator: string
-  onToggle: (name: string, enabled: boolean) => void
   onClose: () => void
 }
 
-export function ToolPanel({ tools, servers, separator, onToggle, onClose }: Props) {
+export function ToolPanel({ tools, servers, separator, onClose }: Props) {
   const grouped = new Map<string, ToolInfo[]>()
   for (const tool of tools) {
     const list = grouped.get(tool.server) || []
@@ -33,14 +32,12 @@ export function ToolPanel({ tools, servers, separator, onToggle, onClose }: Prop
                 <span className="server-count">{serverTools.length} tools</span>
               </div>
               {serverTools.map(tool => (
-                <label key={tool.function.name} className="tool-toggle">
-                  <input
-                    type="checkbox"
-                    checked={tool.enabled}
-                    onChange={e => onToggle(tool.function.name, e.target.checked)}
-                  />
-                  <span className="tool-toggle-name">{displayToolName(tool.function.name, tool.server, separator)}</span>
-                </label>
+                <div key={tool.function.name} className="tool-entry">
+                  <div className="tool-entry-name">{displayToolName(tool.function.name, tool.server, separator)}</div>
+                  {tool.function.description && (
+                    <div className="tool-entry-description">{tool.function.description}</div>
+                  )}
+                </div>
               ))}
             </div>
           )

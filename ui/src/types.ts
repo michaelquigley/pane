@@ -75,7 +75,6 @@ export type SSEEvent =
 
 export interface ToolInfo {
   server: string
-  enabled: boolean
   function: {
     name: string
     description: string

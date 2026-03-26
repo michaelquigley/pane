@@ -22,13 +22,12 @@ type Manager struct {
 }
 
 type ServerInstance struct {
-	name     string
-	config   *config.ServerConfig
-	client   *mcpclient.Client
-	tools    []mcptypes.Tool
-	status   string
-	err      string
-	disabled map[string]bool
+	name   string
+	config *config.ServerConfig
+	client *mcpclient.Client
+	tools  []mcptypes.Tool
+	status string
+	err    string
 }
 
 func NewManager(cfg *config.MCPConfig) *Manager {
@@ -44,10 +43,9 @@ func NewManager(cfg *config.MCPConfig) *Manager {
 	}
 	for name, sc := range cfg.Servers {
 		m.servers[name] = &ServerInstance{
-			name:     name,
-			config:   sc,
-			status:   "starting",
-			disabled: make(map[string]bool),
+			name:   name,
+			config: sc,
+			status: "starting",
 		}
 	}
 	return m
@@ -147,8 +145,7 @@ func (m *Manager) GetAllTools() []ToolInfo {
 		for _, t := range si.tools {
 			qualified := QualifyToolName(serverName, t.Name, m.separator)
 			tools = append(tools, ToolInfo{
-				Server:  serverName,
-				Enabled: !si.disabled[t.Name],
+				Server: serverName,
 				Function: ToolFunction{
 					Name:        qualified,
 					Description: t.Description,
@@ -160,12 +157,7 @@ func (m *Manager) GetAllTools() []ToolInfo {
 	return tools
 }
 
-func (m *Manager) GetEnabledTools(disabled []string) []llm.Tool {
-	disabledSet := make(map[string]bool, len(disabled))
-	for _, d := range disabled {
-		disabledSet[d] = true
-	}
-
+func (m *Manager) GetEnabledTools() []llm.Tool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -175,16 +167,9 @@ func (m *Manager) GetEnabledTools(disabled []string) []llm.Tool {
 			continue
 		}
 		for _, t := range si.tools {
-			if si.disabled[t.Name] {
-				continue
-			}
 			qualified := QualifyToolName(serverName, t.Name, m.separator)
-			if disabledSet[qualified] {
-				continue
-			}
 			info := ToolInfo{
-				Server:  serverName,
-				Enabled: true,
+				Server: serverName,
 				Function: ToolFunction{
 					Name:        qualified,
 					Description: t.Description,
@@ -210,25 +195,6 @@ func (m *Manager) GetServerStatuses() map[string]ServerStatus {
 		}
 	}
 	return statuses
-}
-
-func (m *Manager) ToggleTool(qualifiedName string, enabled bool) error {
-	server, tool := ParseToolName(qualifiedName, m.separator)
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	si, ok := m.servers[server]
-	if !ok {
-		return fmt.Errorf("unknown server: %s", server)
-	}
-
-	if enabled {
-		delete(si.disabled, tool)
-	} else {
-		si.disabled[tool] = true
-	}
-	return nil
 }
 
 func (m *Manager) CallTool(ctx context.Context, qualifiedName string, args map[string]any) (string, time.Duration, error) {

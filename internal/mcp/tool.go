@@ -10,7 +10,6 @@ import (
 
 type ToolInfo struct {
 	Server   string       `json:"server"`
-	Enabled  bool         `json:"enabled"`
 	Function ToolFunction `json:"function"`
 }
 

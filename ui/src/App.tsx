@@ -27,7 +27,7 @@ export default function App() {
 
   const { config } = useConfig()
   const { models } = useModels()
-  const { tools, servers, disabledTools, toggleTool } = useTools()
+  const { tools, servers } = useTools()
   const chat = useChat()
 
   useEffect(() => {
@@ -125,7 +125,6 @@ export default function App() {
           model: preferences.modelOverride || '',
           systemPromptMode: preferences.systemPromptMode,
           systemPrompt: preferences.systemPromptCustom,
-          disabledTools,
         })
       }, 0)
     } else {
@@ -133,10 +132,9 @@ export default function App() {
         model: preferences.modelOverride || '',
         systemPromptMode: preferences.systemPromptMode,
         systemPrompt: preferences.systemPromptCustom,
-        disabledTools,
       })
     }
-  }, [activeId, preferences, disabledTools, chat, setConversations, setActiveId])
+  }, [activeId, preferences, chat, setConversations, setActiveId])
 
   return (
     <div className="app-layout">
@@ -195,7 +193,6 @@ export default function App() {
           tools={tools}
           servers={servers}
           separator={config.mcp_separator}
-          onToggle={toggleTool}
           onClose={() => setToolPanelOpen(false)}
         />
       )}

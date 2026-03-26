@@ -31,7 +31,6 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/models", a.handleModels)
 	mux.HandleFunc("POST /api/chat", a.handleChat)
 	mux.HandleFunc("GET /api/tools", a.handleTools)
-	mux.HandleFunc("POST /api/tools/toggle", a.handleToolToggle)
 	mux.HandleFunc("POST /api/tools/approve", a.handleApprove)
 }
 
