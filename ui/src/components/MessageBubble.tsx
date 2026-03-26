@@ -1,9 +1,10 @@
+import { lazy, Suspense } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { ToolCallBlock } from './ToolCallBlock'
 import type { Message, ActiveToolCall } from '../types'
+
+const MarkdownCodeBlock = lazy(() => import('./MarkdownCodeBlock'))
 
 interface Props {
   message: Message
@@ -69,27 +70,23 @@ export function MessageBubble({
               ))}
             </div>
           )}
-          {content && (
-            <div className="message-content assistant-content">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  code({ className, children, ...props }) {
-                    const match = /language-(\w+)/.exec(className || '')
-                    const code = String(children).replace(/\n$/, '')
-                    if (match) {
-                      return (
-                        <SyntaxHighlighter
-                          style={oneDark}
-                          language={match[1]}
-                          PreTag="div"
-                        >
-                          {code}
-                        </SyntaxHighlighter>
-                      )
-                    }
-                    return <code className={className} {...props}>{children}</code>
-                  }
+	          {content && (
+	            <div className="message-content assistant-content">
+	              <ReactMarkdown
+	                remarkPlugins={[remarkGfm]}
+	                components={{
+	                  code({ className, children, ...props }) {
+	                    const match = /language-(\w+)/.exec(className || '')
+	                    const code = String(children).replace(/\n$/, '')
+	                    if (match) {
+	                      return (
+	                        <Suspense fallback={<pre>{code}</pre>}>
+	                          <MarkdownCodeBlock language={match[1]} code={code} />
+	                        </Suspense>
+	                      )
+	                    }
+	                    return <code className={className} {...props}>{children}</code>
+	                  }
                 }}
               >
                 {content}
