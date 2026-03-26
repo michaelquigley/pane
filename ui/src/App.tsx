@@ -193,6 +193,7 @@ export default function App() {
         <ToolPanel
           tools={tools}
           servers={servers}
+          separator={config.mcp_separator}
           onToggle={toggleTool}
           onClose={() => setToolPanelOpen(false)}
         />

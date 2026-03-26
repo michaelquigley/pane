@@ -53,6 +53,7 @@ export type SystemPromptMode = 'default' | 'custom' | 'none'
 export interface ConfigResponse {
   default_model: string
   default_system: string
+  mcp_separator: string
 }
 
 export interface ChatPreferences {

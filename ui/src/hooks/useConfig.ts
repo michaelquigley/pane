@@ -4,6 +4,7 @@ import type { ConfigResponse } from '../types'
 const emptyConfig: ConfigResponse = {
   default_model: '',
   default_system: '',
+  mcp_separator: '_',
 }
 
 export function useConfig() {
@@ -17,6 +18,7 @@ export function useConfig() {
         setConfig({
           default_model: data.default_model || '',
           default_system: data.default_system || '',
+          mcp_separator: data.mcp_separator || '_',
         })
       })
       .catch(() => setConfig(emptyConfig))

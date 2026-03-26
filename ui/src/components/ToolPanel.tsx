@@ -3,11 +3,12 @@ import type { ToolInfo, ServerStatus } from '../types'
 interface Props {
   tools: ToolInfo[]
   servers: Record<string, ServerStatus>
+  separator: string
   onToggle: (name: string, enabled: boolean) => void
   onClose: () => void
 }
 
-export function ToolPanel({ tools, servers, onToggle, onClose }: Props) {
+export function ToolPanel({ tools, servers, separator, onToggle, onClose }: Props) {
   const grouped = new Map<string, ToolInfo[]>()
   for (const tool of tools) {
     const list = grouped.get(tool.server) || []
@@ -38,7 +39,7 @@ export function ToolPanel({ tools, servers, onToggle, onClose }: Props) {
                     checked={tool.enabled}
                     onChange={e => onToggle(tool.function.name, e.target.checked)}
                   />
-                  <span className="tool-toggle-name">{tool.function.name.split('_').slice(1).join('_')}</span>
+                  <span className="tool-toggle-name">{displayToolName(tool.function.name, tool.server, separator)}</span>
                 </label>
               ))}
             </div>
@@ -50,4 +51,12 @@ export function ToolPanel({ tools, servers, onToggle, onClose }: Props) {
       </div>
     </div>
   )
+}
+
+function displayToolName(qualifiedName: string, serverName: string, separator: string): string {
+  const prefix = `${serverName}${separator}`
+  if (qualifiedName.startsWith(prefix)) {
+    return qualifiedName.slice(prefix.length)
+  }
+  return qualifiedName
 }

@@ -13,6 +13,9 @@ func TestHandleConfigReturnsDefaultFields(t *testing.T) {
 		cfg: &config.Config{
 			Model:  "configured-model",
 			System: "configured system",
+			MCP: &config.MCPConfig{
+				Separator: "::",
+			},
 		},
 	}
 
@@ -31,5 +34,9 @@ func TestHandleConfigReturnsDefaultFields(t *testing.T) {
 
 	if payload["default_system"] != "configured system" {
 		t.Fatalf("expected default_system, got %q", payload["default_system"])
+	}
+
+	if payload["mcp_separator"] != "::" {
+		t.Fatalf("expected mcp_separator, got %q", payload["mcp_separator"])
 	}
 }

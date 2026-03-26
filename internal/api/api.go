@@ -41,9 +41,15 @@ func (a *API) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (a *API) handleConfig(w http.ResponseWriter, _ *http.Request) {
+	separator := "_"
+	if a.cfg.MCP != nil && a.cfg.MCP.Separator != "" {
+		separator = a.cfg.MCP.Separator
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"default_system": a.cfg.System,
 		"default_model":  a.cfg.Model,
+		"mcp_separator":  separator,
 	})
 }
