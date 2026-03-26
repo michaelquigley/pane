@@ -34,6 +34,19 @@ type pendingToolCall struct {
 	Index     int
 }
 
+type roundCompleteData struct {
+	Assistant    Message   `json:"assistant"`
+	ToolMessages []Message `json:"tool_messages"`
+}
+
+func emitToolCallStart(sw *sse.Writer, p *pendingToolCall) {
+	_ = sw.Send("tool_call_start", sse.ToolCallStartData{
+		Index: p.Index,
+		ID:    p.ID,
+		Name:  p.Name,
+	})
+}
+
 // RunToolLoop runs the full chat-with-tools loop: stream LLM response, execute
 // tool calls via MCP, append results, re-send until the LLM produces a final
 // content-only response.
@@ -113,30 +126,27 @@ func RunToolLoop(
 						Index: idx,
 					}
 					pending[idx] = existing
-					if tc.ID != "" && tc.Function.Name != "" {
-						_ = sw.Send("tool_call_start", sse.ToolCallStartData{
-							ID:   tc.ID,
-							Name: tc.Function.Name,
-						})
-					}
+					emitToolCallStart(sw, existing)
 				}
 
 				// accumulate ID/name if they arrive in later chunks
-				if existing.ID == "" && tc.ID != "" {
+				previousID := existing.ID
+				previousName := existing.Name
+				if tc.ID != "" {
 					existing.ID = tc.ID
 				}
-				if existing.Name == "" && tc.Function.Name != "" {
+				if tc.Function.Name != "" {
 					existing.Name = tc.Function.Name
-					_ = sw.Send("tool_call_start", sse.ToolCallStartData{
-						ID:   existing.ID,
-						Name: existing.Name,
-					})
+				}
+				if existing.ID != previousID || existing.Name != previousName {
+					emitToolCallStart(sw, existing)
 				}
 
 				// accumulate arguments
 				if tc.Function.Arguments != "" {
 					existing.Arguments += tc.Function.Arguments
 					_ = sw.Send("tool_call_args", sse.ToolCallArgsData{
+						Index:            existing.Index,
 						ID:               existing.ID,
 						ArgumentsPartial: tc.Function.Arguments,
 					})
@@ -178,29 +188,39 @@ func RunToolLoop(
 
 		messages = append(messages, assistantMsg)
 
-		// no tool calls — we're done
-		if len(pending) == 0 {
-			_ = sw.SendDone()
-			return nil
-		}
+		toolMessages := make([]Message, 0, len(pending))
 
 		// execute each tool call
 		for _, p := range pending {
 			result, durationMs := executeSingleTool(ctx, p, executor, sw, approvals)
 
 			resultContent := result
-			messages = append(messages, Message{
+			toolMsg := Message{
 				Role:       "tool",
 				ToolCallID: p.ID,
 				Content:    &resultContent,
-			})
+			}
+			toolMessages = append(toolMessages, toolMsg)
+			messages = append(messages, toolMsg)
 
 			_ = sw.Send("tool_call_result", sse.ToolCallResultData{
+				Index:      p.Index,
 				ID:         p.ID,
 				Name:       p.Name,
 				Content:    result,
 				DurationMS: durationMs,
 			})
+		}
+
+		_ = sw.Send("round_complete", roundCompleteData{
+			Assistant:    assistantMsg,
+			ToolMessages: toolMessages,
+		})
+
+		// no tool calls — we're done
+		if len(pending) == 0 {
+			_ = sw.SendDone()
+			return nil
 		}
 	}
 
@@ -222,6 +242,7 @@ func executeSingleTool(
 	// approval gate
 	if executor.NeedsApproval(p.Name) {
 		_ = sw.Send("tool_call_approve", sse.ToolCallApproveData{
+			Index:     p.Index,
 			ID:        p.ID,
 			Name:      p.Name,
 			Arguments: p.Arguments,
@@ -245,6 +266,7 @@ func executeSingleTool(
 	}
 
 	_ = sw.Send("tool_call_executing", sse.ToolCallExecutingData{
+		Index: p.Index,
 		ID:   p.ID,
 		Name: p.Name,
 	})

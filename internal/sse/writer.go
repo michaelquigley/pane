@@ -56,27 +56,32 @@ type ErrorData struct {
 }
 
 type ToolCallStartData struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	Index int    `json:"index"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
 }
 
 type ToolCallArgsData struct {
+	Index            int    `json:"index"`
 	ID               string `json:"id"`
 	ArgumentsPartial string `json:"arguments_partial"`
 }
 
 type ToolCallExecutingData struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	Index int    `json:"index"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
 }
 
 type ToolCallApproveData struct {
+	Index     int    `json:"index"`
 	ID        string `json:"id"`
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
 }
 
 type ToolCallResultData struct {
+	Index      int    `json:"index"`
 	ID         string `json:"id"`
 	Name       string `json:"name"`
 	Content    string `json:"content"`

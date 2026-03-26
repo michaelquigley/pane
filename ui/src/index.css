@@ -187,6 +187,10 @@ body {
   max-width: 100%;
 }
 
+.message-tool .message-content {
+  max-width: 100%;
+}
+
 .assistant-content p {
   margin-bottom: 0.75em;
 }
@@ -242,6 +246,31 @@ body {
 .assistant-content ol {
   padding-left: 1.5em;
   margin: 0.5em 0;
+}
+
+.tool-content {
+  background: var(--bg-muted);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+
+.tool-message-label {
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.tool-content pre {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
 }
 
 /* Streaming cursor */

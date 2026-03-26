@@ -9,7 +9,7 @@ interface Props {
   message: Message
   isStreaming?: boolean
   streamingContent?: string
-  activeToolCalls?: Map<string, ActiveToolCall>
+  activeToolCalls?: Map<number, ActiveToolCall>
   onApprove?: (id: string) => void
   onDeny?: (id: string) => void
 }
@@ -22,26 +22,32 @@ export function MessageBubble({
   onApprove,
   onDeny,
 }: Props) {
-  if (message.role === 'system' || message.role === 'tool') {
+  if (message.role === 'system') {
     return null
   }
 
   const isUser = message.role === 'user'
+  const isTool = message.role === 'tool'
   const content = isStreaming ? (streamingContent || '') : (message.content || '')
   const toolCalls = isStreaming
     ? Array.from(activeToolCalls?.values() || [])
-    : (message.tool_calls || []).map(tc => ({
+    : (message.tool_calls || []).map((tc, index) => ({
+        index,
         id: tc.id,
         name: tc.function.name,
         status: 'complete' as const,
         argumentsSoFar: tc.function.arguments,
-        result: findToolResult(message, tc.id),
       }))
 
   return (
-    <div className={`message ${isUser ? 'message-user' : 'message-assistant'}`}>
+    <div className={`message ${isUser ? 'message-user' : isTool ? 'message-tool' : 'message-assistant'}`}>
       {isUser ? (
         <div className="message-content user-content">{content}</div>
+      ) : isTool ? (
+        <div className="message-content tool-content">
+          <div className="tool-message-label">tool result</div>
+          <pre>{content}</pre>
+        </div>
       ) : (
         <>
           {toolCalls.length > 0 && (
@@ -93,13 +99,4 @@ export function MessageBubble({
       )}
     </div>
   )
-}
-
-function findToolResult(message: Message, _toolCallId: string): string | undefined {
-  // In completed messages, tool results are separate Message objects.
-  // The parent component handles this by not showing tool messages directly.
-  // For completed tool calls shown inline, we don't have the result here.
-  void _toolCallId
-  void message
-  return undefined
 }

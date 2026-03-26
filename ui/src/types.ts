@@ -23,7 +23,8 @@ export interface ToolCall {
 }
 
 export interface ActiveToolCall {
-  id: string
+  index: number
+  id?: string
   name: string
   status: 'loading' | 'args_streaming' | 'awaiting_approval' | 'executing' | 'complete' | 'error'
   argumentsSoFar: string
@@ -34,11 +35,12 @@ export interface ActiveToolCall {
 
 export type SSEEvent =
   | { type: 'delta'; content: string }
-  | { type: 'tool_call_start'; id: string; name: string }
-  | { type: 'tool_call_args'; id: string; arguments_partial: string }
-  | { type: 'tool_call_executing'; id: string; name: string }
-  | { type: 'tool_call_approve'; id: string; name: string; arguments: string }
-  | { type: 'tool_call_result'; id: string; name: string; content: string; duration_ms: number }
+  | { type: 'tool_call_start'; index: number; id: string; name: string }
+  | { type: 'tool_call_args'; index: number; id: string; arguments_partial: string }
+  | { type: 'tool_call_executing'; index: number; id: string; name: string }
+  | { type: 'tool_call_approve'; index: number; id: string; name: string; arguments: string }
+  | { type: 'tool_call_result'; index: number; id: string; name: string; content: string; duration_ms: number }
+  | { type: 'round_complete'; assistant: Message; tool_messages: Message[] }
   | { type: 'error'; code: string; message: string; tool_call_id?: string }
   | { type: 'done' }
 

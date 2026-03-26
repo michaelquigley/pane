@@ -6,7 +6,7 @@ interface Props {
   messages: Message[]
   isStreaming: boolean
   streamingContent: string
-  activeToolCalls: Map<string, ActiveToolCall>
+  activeToolCalls: Map<number, ActiveToolCall>
   error: string | null
   onSend: (content: string) => void
   onApprove: (id: string) => void
@@ -47,8 +47,8 @@ export function ChatView({
     onSend(trimmed)
   }
 
-  // filter out system and tool messages for display
-  const visibleMessages = messages.filter(m => m.role === 'user' || m.role === 'assistant')
+  // filter out system messages for display
+  const visibleMessages = messages.filter(m => m.role !== 'system')
 
   return (
     <div className="chat-view">

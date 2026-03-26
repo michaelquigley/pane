@@ -8,9 +8,10 @@ interface Props {
 }
 
 export function ToolCallBlock({ toolCall, onApprove, onDeny }: Props) {
-  const needsApproval = toolCall.status === 'awaiting_approval'
+  const needsApproval = toolCall.status === 'awaiting_approval' && !!toolCall.id
   const [argsExpanded, setArgsExpanded] = useState(needsApproval)
   const [resultExpanded, setResultExpanded] = useState(false)
+  const displayName = toolCall.name || 'calling tool...'
 
   useEffect(() => {
     if (needsApproval) setArgsExpanded(true)
@@ -43,19 +44,19 @@ export function ToolCallBlock({ toolCall, onApprove, onDeny }: Props) {
   }
 
   return (
-    <div className={`tool-call-block tool-call-${toolCall.status}`}>
+      <div className={`tool-call-block tool-call-${toolCall.status}`}>
       <div className="tool-call-header" onClick={() => setArgsExpanded(!argsExpanded)}>
         {statusIndicator()}
-        <span className="tool-call-name">{toolCall.name}</span>
+        <span className="tool-call-name">{displayName}</span>
         {toolCall.status === 'complete' && toolCall.durationMs !== undefined && (
           <span className="tool-call-duration">{toolCall.durationMs}ms</span>
         )}
       </div>
 
-      {toolCall.status === 'awaiting_approval' && (
+      {needsApproval && (
         <div className="tool-call-approval">
-          <button className="approve-btn" onClick={() => onApprove?.(toolCall.id)}>Approve</button>
-          <button className="deny-btn" onClick={() => onDeny?.(toolCall.id)}>Deny</button>
+          <button className="approve-btn" onClick={() => onApprove?.(toolCall.id!)}>Approve</button>
+          <button className="deny-btn" onClick={() => onDeny?.(toolCall.id!)}>Deny</button>
         </div>
       )}
 
