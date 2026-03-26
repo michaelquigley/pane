@@ -22,7 +22,7 @@ export default function App() {
   const [conversations, setConversations] = useLocalStorage<Conversation[]>('pane:conversations', [])
   const [activeId, setActiveId] = useLocalStorage<string | null>('pane:activeConversation', null)
   const [preferences, setPreferences] = useLocalStorage<ChatPreferences>('pane:chatPreferences', defaultChatPreferences)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [toolPanelOpen, setToolPanelOpen] = useState(false)
 
   const { config } = useConfig()
