@@ -15,6 +15,7 @@ const Version = "v0.0.x-dev"
 
 type Config struct {
 	Endpoint string
+	ApiKey   string
 	Model    string
 	System   string
 	Listen   string

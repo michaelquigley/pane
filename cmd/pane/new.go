@@ -15,6 +15,9 @@ const configTemplate = `# pane configuration
 # OpenAI-compatible endpoint to proxy to
 endpoint: http://localhost:18080/v1
 
+# bearer token for LLM endpoint authentication (optional)
+#api_key: sk-...
+
 # default model (overridable in UI)
 model: qwen2.5:14b
 

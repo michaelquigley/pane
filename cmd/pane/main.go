@@ -57,7 +57,7 @@ func run(_ *cobra.Command, _ []string) {
 	mcpMgr := mcp.NewManager(cfg.MCP)
 	mcpMgr.Start(ctx)
 
-	llmClient := llm.NewClient(cfg.Endpoint, cfg.Model)
+	llmClient := llm.NewClient(cfg.Endpoint, cfg.Model, cfg.ApiKey)
 	a := api.NewAPI(cfg, llmClient, mcpMgr)
 
 	mux := http.NewServeMux()

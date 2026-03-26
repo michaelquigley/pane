@@ -13,14 +13,22 @@ import (
 type Client struct {
 	httpClient   *http.Client
 	baseURL      string
+	apiKey       string
 	DefaultModel string
 }
 
-func NewClient(endpoint, model string) *Client {
+func NewClient(endpoint, model, apiKey string) *Client {
 	return &Client{
 		httpClient:   &http.Client{},
 		baseURL:      strings.TrimRight(endpoint, "/"),
+		apiKey:       apiKey,
 		DefaultModel: model,
+	}
+}
+
+func (c *Client) setAuth(req *http.Request) {
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 }
 
@@ -29,6 +37,7 @@ func (c *Client) ListModels(ctx context.Context) (*ModelsResponse, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
+	c.setAuth(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -62,6 +71,7 @@ func (c *Client) StreamChat(ctx context.Context, chatReq *ChatRequest) (*StreamR
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	c.setAuth(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
