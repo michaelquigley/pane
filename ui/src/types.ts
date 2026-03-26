@@ -10,6 +10,7 @@ export interface Message {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string | null
   tool_calls?: ToolCall[]
+  tool_call_results?: Record<string, ToolCallResult>
   tool_call_id?: string
 }
 
@@ -30,7 +31,21 @@ export interface ActiveToolCall {
   argumentsSoFar: string
   result?: string
   durationMs?: number
-  error?: string
+  errorCode?: ToolCallErrorCode
+}
+
+export type ToolCallErrorCode =
+  | 'denied'
+  | 'approval_timeout'
+  | 'cancelled'
+  | 'malformed_arguments'
+  | 'execution_error'
+
+export interface ToolCallResult {
+  status: 'complete' | 'error'
+  error_code?: ToolCallErrorCode
+  content: string
+  duration_ms: number
 }
 
 export type SSEEvent =
@@ -39,7 +54,7 @@ export type SSEEvent =
   | { type: 'tool_call_args'; index: number; id: string; arguments_partial: string }
   | { type: 'tool_call_executing'; index: number; id: string; name: string }
   | { type: 'tool_call_approve'; index: number; id: string; name: string; arguments: string }
-  | { type: 'tool_call_result'; index: number; id: string; name: string; content: string; duration_ms: number }
+  | { type: 'tool_call_result'; index: number; id: string; name: string; status: 'complete' | 'error'; error_code?: ToolCallErrorCode; content: string; duration_ms: number }
   | { type: 'round_complete'; assistant: Message; tool_messages: Message[] }
   | { type: 'error'; code: string; message: string; tool_call_id?: string }
   | { type: 'done' }

@@ -84,6 +84,8 @@ type ToolCallResultData struct {
 	Index      int    `json:"index"`
 	ID         string `json:"id"`
 	Name       string `json:"name"`
+	Status     string `json:"status"`
+	ErrorCode  string `json:"error_code,omitempty"`
 	Content    string `json:"content"`
 	DurationMS int64  `json:"duration_ms"`
 }

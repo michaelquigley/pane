@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -16,20 +17,32 @@ import (
 type testExecutor struct {
 	result   string
 	duration time.Duration
+	err      error
+	approve  bool
 }
 
 func (t testExecutor) CallTool(_ context.Context, _ string, _ map[string]any) (string, time.Duration, error) {
-	return t.result, t.duration, nil
+	return t.result, t.duration, t.err
 }
 
 func (t testExecutor) NeedsApproval(string) bool {
-	return false
+	return t.approve
 }
 
 type recordedEvent struct {
 	Type string
 	Data json.RawMessage
 }
+
+type testApprovalRegistry struct {
+	ch chan bool
+}
+
+func (r *testApprovalRegistry) Register(string) <-chan bool {
+	return r.ch
+}
+
+func (r *testApprovalRegistry) Unregister(string) {}
 
 func TestRunToolLoopEmitsRoundCompletePerIteration(t *testing.T) {
 	t.Parallel()
@@ -150,6 +163,15 @@ func TestRunToolLoopEmitsRoundCompletePerIteration(t *testing.T) {
 	if len(firstRound.ToolMessages) != 1 {
 		t.Fatalf("expected 1 tool message, got %d", len(firstRound.ToolMessages))
 	}
+
+	var firstResult sse.ToolCallResultData
+	if err := json.Unmarshal(events[4].Data, &firstResult); err != nil {
+		t.Fatalf("unmarshaling tool_call_result: %v", err)
+	}
+	if firstResult.Status != toolCallStatusComplete || firstResult.ErrorCode != "" {
+		t.Fatalf("unexpected tool_call_result outcome: %#v", firstResult)
+	}
+
 	if firstRound.ToolMessages[0].Role != "tool" {
 		t.Fatalf("expected tool role, got %q", firstRound.ToolMessages[0].Role)
 	}
@@ -321,6 +343,9 @@ func TestRunToolLoopEmitsIndexedToolEventsForFragmentedMetadata(t *testing.T) {
 	}
 	if result.Index != 0 || result.ID != "call_fragmented" || result.Name != "filesystem_read_file" {
 		t.Fatalf("unexpected tool_call_result payload: %#v", result)
+	}
+	if result.Status != toolCallStatusComplete || result.ErrorCode != "" {
+		t.Fatalf("unexpected fragmented tool_call_result outcome: %#v", result)
 	}
 }
 
@@ -525,6 +550,116 @@ func TestRunToolLoopEmitsRoundCompleteForNoToolResponses(t *testing.T) {
 	}
 }
 
+func TestExecuteSingleToolReturnsStructuredOutcomes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		ctx        func() context.Context
+		pending    *pendingToolCall
+		executor   ToolExecutor
+		approvals  ApprovalRegistry
+		wantStatus string
+		wantCode   string
+		wantText   string
+	}{
+		{
+			name: "success",
+			ctx:  context.Background,
+			pending: &pendingToolCall{
+				ID:        "call_success",
+				Name:      "filesystem_read_file",
+				Arguments: `{"path":"README.md"}`,
+				Index:     0,
+			},
+			executor:   testExecutor{result: "README contents", duration: 7 * time.Millisecond},
+			wantStatus: toolCallStatusComplete,
+			wantText:   "README contents",
+		},
+		{
+			name: "denied",
+			ctx:  context.Background,
+			pending: &pendingToolCall{
+				ID:        "call_denied",
+				Name:      "filesystem_read_file",
+				Arguments: `{"path":"README.md"}`,
+				Index:     0,
+			},
+			executor:   testExecutor{approve: true},
+			approvals:  &testApprovalRegistry{ch: bufferedApproval(false)},
+			wantStatus: toolCallStatusError,
+			wantCode:   toolCallErrorDenied,
+			wantText:   "Tool call denied by user",
+		},
+		{
+			name: "cancelled",
+			ctx: func() context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			},
+			pending: &pendingToolCall{
+				ID:        "call_cancelled",
+				Name:      "filesystem_read_file",
+				Arguments: `{"path":"README.md"}`,
+				Index:     0,
+			},
+			executor:   testExecutor{approve: true},
+			approvals:  &testApprovalRegistry{ch: make(chan bool)},
+			wantStatus: toolCallStatusError,
+			wantCode:   toolCallErrorCancelled,
+			wantText:   "Request cancelled",
+		},
+		{
+			name: "malformed arguments",
+			ctx:  context.Background,
+			pending: &pendingToolCall{
+				ID:        "call_bad_args",
+				Name:      "filesystem_read_file",
+				Arguments: `{"path":`,
+				Index:     0,
+			},
+			executor:   testExecutor{},
+			wantStatus: toolCallStatusError,
+			wantCode:   toolCallErrorMalformedArguments,
+			wantText:   "Error: malformed arguments:",
+		},
+		{
+			name: "execution error",
+			ctx:  context.Background,
+			pending: &pendingToolCall{
+				ID:        "call_exec_error",
+				Name:      "filesystem_read_file",
+				Arguments: `{"path":"README.md"}`,
+				Index:     0,
+			},
+			executor:   testExecutor{duration: 11 * time.Millisecond, err: errors.New("boom")},
+			wantStatus: toolCallStatusError,
+			wantCode:   toolCallErrorExecution,
+			wantText:   "Error: boom",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			sw := newTestSSEWriter(t)
+			result := executeSingleTool(tt.ctx(), tt.pending, tt.executor, sw, tt.approvals)
+
+			if result.Status != tt.wantStatus {
+				t.Fatalf("expected status %q, got %q", tt.wantStatus, result.Status)
+			}
+			if result.ErrorCode != tt.wantCode {
+				t.Fatalf("expected error code %q, got %q", tt.wantCode, result.ErrorCode)
+			}
+			if !strings.Contains(result.Content, tt.wantText) {
+				t.Fatalf("expected result content %q to contain %q", result.Content, tt.wantText)
+			}
+		})
+	}
+}
+
 func writeStreamChunk(t *testing.T, w http.ResponseWriter, chunk StreamChunk) {
 	t.Helper()
 
@@ -569,4 +704,20 @@ func assertEventTypes(t *testing.T, events []recordedEvent, expected ...string) 
 			t.Fatalf("event %d: expected %q, got %q", idx, want, events[idx].Type)
 		}
 	}
+}
+
+func bufferedApproval(approved bool) chan bool {
+	ch := make(chan bool, 1)
+	ch <- approved
+	return ch
+}
+
+func newTestSSEWriter(t *testing.T) *sse.Writer {
+	t.Helper()
+
+	sw, err := sse.NewWriter(httptest.NewRecorder())
+	if err != nil {
+		t.Fatalf("creating SSE writer: %v", err)
+	}
+	return sw
 }

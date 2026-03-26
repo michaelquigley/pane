@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import type { Message, ActiveToolCall, SSEEvent } from '../types'
+import type { Message, ActiveToolCall, SSEEvent, ToolCallResult } from '../types'
 
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>([])
@@ -134,15 +134,17 @@ export function useChat() {
                   const tc = getOrCreateActiveToolCall(toolCallsAccum, event.index)
                   if (event.id) tc.id = event.id
                   if (event.name) tc.name = event.name
-                  tc.status = 'complete'
+                  tc.status = event.status
                   tc.result = event.content
                   tc.durationMs = event.duration_ms
+                  tc.errorCode = event.error_code
                   setActiveToolCalls(new Map(toolCallsAccum))
                   break
                 }
 
                 case 'round_complete': {
-                  committedMessages = [...committedMessages, event.assistant, ...event.tool_messages]
+                  const assistantMessage = attachToolCallResults(event.assistant, toolCallsAccum)
+                  committedMessages = [...committedMessages, assistantMessage, ...event.tool_messages]
                   setMessages(committedMessages)
                   contentAccum = ''
                   toolCallsAccum.clear()
@@ -238,4 +240,30 @@ function getOrCreateActiveToolCall(
     toolCallsAccum.set(index, tc)
   }
   return tc
+}
+
+function attachToolCallResults(
+  assistant: Message,
+  toolCallsAccum: Map<number, ActiveToolCall>,
+): Message {
+  const toolCallResults: Record<string, ToolCallResult> = {}
+
+  for (const toolCall of toolCallsAccum.values()) {
+    if (!toolCall.id || toolCall.result === undefined) continue
+    toolCallResults[toolCall.id] = {
+      status: toolCall.status === 'error' ? 'error' : 'complete',
+      error_code: toolCall.errorCode,
+      content: toolCall.result,
+      duration_ms: toolCall.durationMs ?? 0,
+    }
+  }
+
+  if (Object.keys(toolCallResults).length === 0) {
+    return assistant
+  }
+
+  return {
+    ...assistant,
+    tool_call_results: toolCallResults,
+  }
 }

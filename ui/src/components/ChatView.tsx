@@ -33,6 +33,12 @@ export function ChatView({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, streamingContent, activeToolCalls])
 
+  useEffect(() => {
+    if (!isStreaming) {
+      textareaRef.current?.focus()
+    }
+  }, [isStreaming, messages.length])
+
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()

@@ -32,11 +32,15 @@ export function MessageBubble({
   const toolCalls = isStreaming
     ? Array.from(activeToolCalls?.values() || [])
     : (message.tool_calls || []).map((tc, index) => ({
+        ...(message.tool_call_results?.[tc.id] || {}),
         index,
         id: tc.id,
         name: tc.function.name,
-        status: 'complete' as const,
+        status: message.tool_call_results?.[tc.id]?.status || 'complete',
         argumentsSoFar: tc.function.arguments,
+        result: message.tool_call_results?.[tc.id]?.content,
+        durationMs: message.tool_call_results?.[tc.id]?.duration_ms,
+        errorCode: message.tool_call_results?.[tc.id]?.error_code,
       }))
 
   return (
@@ -44,10 +48,13 @@ export function MessageBubble({
       {isUser ? (
         <div className="message-content user-content">{content}</div>
       ) : isTool ? (
-        <div className="message-content tool-content">
-          <div className="tool-message-label">tool result</div>
+        <details className="message-content tool-content">
+          <summary className="tool-disclosure-summary">
+            <span className="tool-message-label">tool result</span>
+            <span className="tool-disclosure-action" aria-hidden="true" />
+          </summary>
           <pre>{content}</pre>
-        </div>
+        </details>
       ) : (
         <>
           {toolCalls.length > 0 && (

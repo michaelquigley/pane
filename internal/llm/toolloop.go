@@ -39,6 +39,24 @@ type roundCompleteData struct {
 	ToolMessages []Message `json:"tool_messages"`
 }
 
+type toolCallResult struct {
+	Content    string
+	DurationMS int64
+	Status     string
+	ErrorCode  string
+}
+
+const (
+	toolCallStatusComplete = "complete"
+	toolCallStatusError    = "error"
+
+	toolCallErrorDenied             = "denied"
+	toolCallErrorApprovalTimeout    = "approval_timeout"
+	toolCallErrorCancelled          = "cancelled"
+	toolCallErrorMalformedArguments = "malformed_arguments"
+	toolCallErrorExecution          = "execution_error"
+)
+
 func emitToolCallStart(sw *sse.Writer, p *pendingToolCall) {
 	_ = sw.Send("tool_call_start", sse.ToolCallStartData{
 		Index: p.Index,
@@ -192,9 +210,9 @@ func RunToolLoop(
 
 		// execute each tool call
 		for _, p := range pending {
-			result, durationMs := executeSingleTool(ctx, p, executor, sw, approvals)
+			result := executeSingleTool(ctx, p, executor, sw, approvals)
 
-			resultContent := result
+			resultContent := result.Content
 			toolMsg := Message{
 				Role:       "tool",
 				ToolCallID: p.ID,
@@ -207,8 +225,10 @@ func RunToolLoop(
 				Index:      p.Index,
 				ID:         p.ID,
 				Name:       p.Name,
-				Content:    result,
-				DurationMS: durationMs,
+				Status:     result.Status,
+				ErrorCode:  result.ErrorCode,
+				Content:    result.Content,
+				DurationMS: result.DurationMS,
 			})
 		}
 
@@ -238,7 +258,7 @@ func executeSingleTool(
 	executor ToolExecutor,
 	sw *sse.Writer,
 	approvals ApprovalRegistry,
-) (result string, durationMs int64) {
+) toolCallResult {
 	// approval gate
 	if executor.NeedsApproval(p.Name) {
 		_ = sw.Send("tool_call_approve", sse.ToolCallApproveData{
@@ -255,12 +275,24 @@ func executeSingleTool(
 			select {
 			case approved := <-ch:
 				if !approved {
-					return "Tool call denied by user", 0
+					return toolCallResult{
+						Content:   "Tool call denied by user",
+						Status:    toolCallStatusError,
+						ErrorCode: toolCallErrorDenied,
+					}
 				}
 			case <-time.After(5 * time.Minute):
-				return "Tool call approval timed out", 0
+				return toolCallResult{
+					Content:   "Tool call approval timed out",
+					Status:    toolCallStatusError,
+					ErrorCode: toolCallErrorApprovalTimeout,
+				}
 			case <-ctx.Done():
-				return "Request cancelled", 0
+				return toolCallResult{
+					Content:   "Request cancelled",
+					Status:    toolCallStatusError,
+					ErrorCode: toolCallErrorCancelled,
+				}
 			}
 		}
 	}
@@ -276,15 +308,28 @@ func executeSingleTool(
 	if p.Arguments != "" {
 		if err := json.Unmarshal([]byte(p.Arguments), &args); err != nil {
 			dl.Warnf("malformed tool call arguments for %s: %v", p.Name, err)
-			return fmt.Sprintf("Error: malformed arguments: %v", err), 0
+			return toolCallResult{
+				Content:   fmt.Sprintf("Error: malformed arguments: %v", err),
+				Status:    toolCallStatusError,
+				ErrorCode: toolCallErrorMalformedArguments,
+			}
 		}
 	}
 
 	content, duration, err := executor.CallTool(ctx, p.Name, args)
 	if err != nil {
 		dl.Warnf("tool call %s failed: %v", p.Name, err)
-		return fmt.Sprintf("Error: %v", err), duration.Milliseconds()
+		return toolCallResult{
+			Content:    fmt.Sprintf("Error: %v", err),
+			DurationMS: duration.Milliseconds(),
+			Status:     toolCallStatusError,
+			ErrorCode:  toolCallErrorExecution,
+		}
 	}
 
-	return content, duration.Milliseconds()
+	return toolCallResult{
+		Content:    content,
+		DurationMS: duration.Milliseconds(),
+		Status:     toolCallStatusComplete,
+	}
 }
