@@ -8,27 +8,36 @@ interface SendMessageOptions {
   disabledTools: string[]
 }
 
+interface RequestSnapshot {
+  requestMessages: Message[]
+  options: SendMessageOptions
+}
+
 export function useChat() {
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessagesState] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingContent, setStreamingContent] = useState('')
   const [activeToolCalls, setActiveToolCalls] = useState<Map<number, ActiveToolCall>>(new Map())
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const lastRequestRef = useRef<RequestSnapshot | null>(null)
 
-  const sendMessage = useCallback(async (
-    content: string,
+  const executeRequest = useCallback(async (
+    requestMessages: Message[],
     options: SendMessageOptions,
   ) => {
-    const userMessage: Message = { role: 'user', content }
-    const allMessages = [...messages, userMessage]
-    let committedMessages = allMessages
+    lastRequestRef.current = {
+      requestMessages,
+      options: { ...options, disabledTools: [...options.disabledTools] },
+    }
+
+    let committedMessages = requestMessages
     let contentAccum = ''
     const toolCallsAccum = new Map<number, ActiveToolCall>()
     let receivedDone = false
     let sawErrorEvent = false
 
-    setMessages(allMessages)
+    setMessagesState(requestMessages)
     setIsStreaming(true)
     setStreamingContent('')
     setActiveToolCalls(new Map())
@@ -39,8 +48,6 @@ export function useChat() {
 
     const controller = new AbortController()
     abortRef.current = controller
-
-    const requestMessages = allMessages.filter(msg => msg.role !== 'system')
 
     try {
       const response = await fetch('/api/chat', {
@@ -142,7 +149,7 @@ export function useChat() {
                 case 'round_complete': {
                   const assistantMessage = attachToolCallResults(event.assistant, toolCallsAccum)
                   committedMessages = [...committedMessages, assistantMessage, ...event.tool_messages]
-                  setMessages(committedMessages)
+                  setMessagesState(committedMessages)
                   contentAccum = ''
                   toolCallsAccum.clear()
                   setStreamingContent('')
@@ -186,7 +193,30 @@ export function useChat() {
       setIsStreaming(false)
       abortRef.current = null
     }
-  }, [messages])
+  }, [])
+
+  const sendMessage = useCallback(async (
+    content: string,
+    options: SendMessageOptions,
+  ) => {
+    const userMessage: Message = { role: 'user', content }
+    const requestMessages = [...messages, userMessage].filter(msg => msg.role !== 'system')
+    await executeRequest(requestMessages, options)
+  }, [executeRequest, messages])
+
+  const retryLastRequest = useCallback(async () => {
+    if (!lastRequestRef.current || isStreaming) return
+    const { requestMessages, options } = lastRequestRef.current
+    await executeRequest(requestMessages, options)
+  }, [executeRequest, isStreaming])
+
+  const setMessages = useCallback((value: Message[] | ((prev: Message[]) => Message[])) => {
+    lastRequestRef.current = null
+    setError(null)
+    setStreamingContent('')
+    setActiveToolCalls(new Map())
+    setMessagesState(value)
+  }, [])
 
   const approveToolCall = useCallback((id: string) => {
     fetch('/api/tools/approve', {
@@ -216,6 +246,7 @@ export function useChat() {
     activeToolCalls,
     error,
     sendMessage,
+    retryLastRequest,
     approveToolCall,
     denyToolCall,
     abort,

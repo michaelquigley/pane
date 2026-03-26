@@ -183,6 +183,7 @@ export default function App() {
           activeToolCalls={chat.activeToolCalls}
           error={chat.error}
           onSend={handleSend}
+          onRetry={chat.retryLastRequest}
           onApprove={chat.approveToolCall}
           onDeny={chat.denyToolCall}
           onAbort={chat.abort}

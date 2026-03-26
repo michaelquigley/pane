@@ -9,6 +9,7 @@ interface Props {
   activeToolCalls: Map<number, ActiveToolCall>
   error: string | null
   onSend: (content: string) => void
+  onRetry: () => void
   onApprove: (id: string) => void
   onDeny: (id: string) => void
   onAbort: () => void
@@ -21,6 +22,7 @@ export function ChatView({
   activeToolCalls,
   error,
   onSend,
+  onRetry,
   onApprove,
   onDeny,
   onAbort,
@@ -81,10 +83,7 @@ export function ChatView({
               {!isStreaming && (
                 <button
                   className="retry-btn"
-                  onClick={() => {
-                    const lastUser = [...messages].reverse().find(m => m.role === 'user')
-                    if (lastUser?.content) onSend(lastUser.content)
-                  }}
+                  onClick={onRetry}
                 >
                   Retry
                 </button>
