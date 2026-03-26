@@ -43,7 +43,7 @@ func (a *API) handleHealth(w http.ResponseWriter, _ *http.Request) {
 func (a *API) handleConfig(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{
-		"system": a.cfg.System,
-		"model":  a.cfg.Model,
+		"default_system": a.cfg.System,
+		"default_model":  a.cfg.Model,
 	})
 }

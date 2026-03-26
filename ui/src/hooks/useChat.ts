@@ -1,5 +1,12 @@
 import { useState, useRef, useCallback } from 'react'
-import type { Message, ActiveToolCall, SSEEvent, ToolCallResult } from '../types'
+import type { Message, ActiveToolCall, SSEEvent, ToolCallResult, SystemPromptMode } from '../types'
+
+interface SendMessageOptions {
+  model: string
+  systemPromptMode: SystemPromptMode
+  systemPrompt: string
+  disabledTools: string[]
+}
 
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>([])
@@ -11,9 +18,7 @@ export function useChat() {
 
   const sendMessage = useCallback(async (
     content: string,
-    model: string,
-    systemPrompt: string,
-    disabledTools: string[],
+    options: SendMessageOptions,
   ) => {
     const userMessage: Message = { role: 'user', content }
     const allMessages = [...messages, userMessage]
@@ -35,26 +40,18 @@ export function useChat() {
     const controller = new AbortController()
     abortRef.current = controller
 
-    // build request messages: prepend system prompt if set
-    const requestMessages: Message[] = []
-    if (systemPrompt) {
-      requestMessages.push({ role: 'system', content: systemPrompt })
-    }
-    // add conversation messages, skipping any existing system messages
-    for (const msg of allMessages) {
-      if (msg.role !== 'system') {
-        requestMessages.push(msg)
-      }
-    }
+    const requestMessages = allMessages.filter(msg => msg.role !== 'system')
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model,
+          model: options.model,
           messages: requestMessages,
-          tools_disabled: disabledTools,
+          tools_disabled: options.disabledTools,
+          system_prompt_mode: options.systemPromptMode,
+          ...(options.systemPromptMode === 'custom' ? { system_prompt: options.systemPrompt } : {}),
         }),
         signal: controller.signal,
       })

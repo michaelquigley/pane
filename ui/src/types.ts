@@ -48,6 +48,19 @@ export interface ToolCallResult {
   duration_ms: number
 }
 
+export type SystemPromptMode = 'default' | 'custom' | 'none'
+
+export interface ConfigResponse {
+  default_model: string
+  default_system: string
+}
+
+export interface ChatPreferences {
+  modelOverride: string | null
+  systemPromptMode: SystemPromptMode
+  systemPromptCustom: string
+}
+
 export type SSEEvent =
   | { type: 'delta'; content: string }
   | { type: 'tool_call_start'; index: number; id: string; name: string }

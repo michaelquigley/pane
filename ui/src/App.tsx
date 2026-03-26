@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { nanoid } from 'nanoid'
 import { useLocalStorage } from './hooks/useLocalStorage'
+import { useConfig } from './hooks/useConfig'
 import { useModels } from './hooks/useModels'
 import { useTools } from './hooks/useTools'
 import { useChat } from './hooks/useChat'
@@ -9,33 +10,34 @@ import { ConversationList } from './components/ConversationList'
 import { ModelSelector } from './components/ModelSelector'
 import { SystemPromptEditor } from './components/SystemPromptEditor'
 import { ToolPanel } from './components/ToolPanel'
-import type { Conversation } from './types'
+import type { Conversation, ChatPreferences, SystemPromptMode } from './types'
+
+const defaultChatPreferences: ChatPreferences = {
+  modelOverride: null,
+  systemPromptMode: 'default',
+  systemPromptCustom: '',
+}
 
 export default function App() {
   const [conversations, setConversations] = useLocalStorage<Conversation[]>('pane:conversations', [])
   const [activeId, setActiveId] = useLocalStorage<string | null>('pane:activeConversation', null)
-  const [systemPrompt, setSystemPrompt] = useLocalStorage<string>('pane:systemPrompt', '')
-  const [configLoaded, setConfigLoaded] = useState(false)
+  const [preferences, setPreferences] = useLocalStorage<ChatPreferences>('pane:chatPreferences', defaultChatPreferences)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [toolPanelOpen, setToolPanelOpen] = useState(false)
 
-  const { models, selectedModel, setSelectedModel } = useModels()
-
-  // seed system prompt from backend config if user hasn't customized it
-  useEffect(() => {
-    if (configLoaded) return
-    fetch('/api/config')
-      .then(r => r.json())
-      .then(data => {
-        if (data.system && !systemPrompt) {
-          setSystemPrompt(data.system)
-        }
-        setConfigLoaded(true)
-      })
-      .catch(() => setConfigLoaded(true))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const { config } = useConfig()
+  const { models } = useModels()
   const { tools, servers, disabledTools, toggleTool } = useTools()
   const chat = useChat()
+
+  useEffect(() => {
+    if (localStorage.getItem('pane:chatPreferences')) return
+
+    const migrated = migrateLegacyPreferences()
+    if (migrated) {
+      setPreferences(migrated)
+    }
+  }, [setPreferences])
 
   const activeConversation = conversations.find(c => c.id === activeId)
 
@@ -78,6 +80,33 @@ export default function App() {
     }
   }, [activeId, setConversations, setActiveId, chat])
 
+  const handleModelChange = useCallback((model: string) => {
+    setPreferences(prev => ({
+      ...prev,
+      modelOverride: model || null,
+    }))
+  }, [setPreferences])
+
+  const handleSystemPromptModeChange = useCallback((mode: SystemPromptMode) => {
+    setPreferences(prev => {
+      const nextCustom = mode === 'custom' && !prev.systemPromptCustom
+        ? config.default_system
+        : prev.systemPromptCustom
+      return {
+        ...prev,
+        systemPromptMode: mode,
+        systemPromptCustom: nextCustom,
+      }
+    })
+  }, [config.default_system, setPreferences])
+
+  const handleSystemPromptCustomChange = useCallback((value: string) => {
+    setPreferences(prev => ({
+      ...prev,
+      systemPromptCustom: value,
+    }))
+  }, [setPreferences])
+
   const handleSend = useCallback((content: string) => {
     if (!activeId) {
       // auto-create conversation
@@ -92,12 +121,22 @@ export default function App() {
       setActiveId(conv.id)
       // small delay to let state propagate
       setTimeout(() => {
-        chat.sendMessage(content, selectedModel, systemPrompt, disabledTools)
+        chat.sendMessage(content, {
+          model: preferences.modelOverride || '',
+          systemPromptMode: preferences.systemPromptMode,
+          systemPrompt: preferences.systemPromptCustom,
+          disabledTools,
+        })
       }, 0)
     } else {
-      chat.sendMessage(content, selectedModel, systemPrompt, disabledTools)
+      chat.sendMessage(content, {
+        model: preferences.modelOverride || '',
+        systemPromptMode: preferences.systemPromptMode,
+        systemPrompt: preferences.systemPromptCustom,
+        disabledTools,
+      })
     }
-  }, [activeId, selectedModel, systemPrompt, disabledTools, chat, setConversations, setActiveId])
+  }, [activeId, preferences, disabledTools, chat, setConversations, setActiveId])
 
   return (
     <div className="app-layout">
@@ -120,10 +159,17 @@ export default function App() {
           </button>
           <ModelSelector
             models={models}
-            selected={selectedModel}
-            onChange={setSelectedModel}
+            defaultModel={config.default_model}
+            selected={preferences.modelOverride || ''}
+            onChange={handleModelChange}
           />
-          <SystemPromptEditor value={systemPrompt} onChange={setSystemPrompt} />
+          <SystemPromptEditor
+            mode={preferences.systemPromptMode}
+            customValue={preferences.systemPromptCustom}
+            defaultValue={config.default_system}
+            onModeChange={handleSystemPromptModeChange}
+            onCustomChange={handleSystemPromptCustomChange}
+          />
           <div className="header-spacer" />
           <button className="header-btn" onClick={() => setToolPanelOpen(!toolPanelOpen)}>
             Tools{tools.length > 0 && ` (${tools.length})`}
@@ -159,4 +205,33 @@ function extractTitle(messages: { role: string; content: string | null }[]): str
   const first = messages.find(m => m.role === 'user')
   if (!first?.content) return 'New conversation'
   return first.content.slice(0, 50)
+}
+
+function migrateLegacyPreferences(): ChatPreferences | null {
+  const modelOverride = readLegacyString('pane:model')
+  const systemPromptCustom = readLegacyString('pane:systemPrompt')
+
+  if (!modelOverride && !systemPromptCustom) {
+    return null
+  }
+
+  localStorage.removeItem('pane:model')
+  localStorage.removeItem('pane:systemPrompt')
+
+  return {
+    modelOverride,
+    systemPromptMode: systemPromptCustom ? 'custom' : 'default',
+    systemPromptCustom: systemPromptCustom || '',
+  }
+}
+
+function readLegacyString(key: string): string | null {
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw === null) return null
+    const parsed = JSON.parse(raw)
+    return typeof parsed === 'string' && parsed.trim() ? parsed : null
+  } catch {
+    return null
+  }
 }

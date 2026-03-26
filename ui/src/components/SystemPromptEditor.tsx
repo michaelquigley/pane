@@ -1,11 +1,21 @@
 import { useState } from 'react'
+import type { SystemPromptMode } from '../types'
 
 interface Props {
-  value: string
-  onChange: (value: string) => void
+  mode: SystemPromptMode
+  customValue: string
+  defaultValue: string
+  onModeChange: (value: SystemPromptMode) => void
+  onCustomChange: (value: string) => void
 }
 
-export function SystemPromptEditor({ value, onChange }: Props) {
+export function SystemPromptEditor({
+  mode,
+  customValue,
+  defaultValue,
+  onModeChange,
+  onCustomChange,
+}: Props) {
   const [expanded, setExpanded] = useState(false)
 
   return (
@@ -17,13 +27,33 @@ export function SystemPromptEditor({ value, onChange }: Props) {
         System prompt {expanded ? '▾' : '▸'}
       </button>
       {expanded && (
-        <textarea
-          className="system-prompt-textarea"
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          placeholder="Override system prompt..."
-          rows={3}
-        />
+        <div className="system-prompt-panel">
+          <select
+            className="system-prompt-mode"
+            value={mode}
+            onChange={e => onModeChange(e.target.value as SystemPromptMode)}
+          >
+            <option value="default">use default</option>
+            <option value="custom">use custom</option>
+            <option value="none">send none</option>
+          </select>
+
+          {mode === 'custom' ? (
+            <textarea
+              className="system-prompt-textarea"
+              value={customValue}
+              onChange={e => onCustomChange(e.target.value)}
+              placeholder={defaultValue || 'Enter system prompt...'}
+              rows={3}
+            />
+          ) : mode === 'none' ? (
+            <div className="system-prompt-note">No system prompt will be sent.</div>
+          ) : (
+            <div className="system-prompt-note">
+              {defaultValue || 'No configured system prompt.'}
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
