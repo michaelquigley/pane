@@ -158,28 +158,12 @@ func (m *Manager) GetAllTools() []ToolInfo {
 }
 
 func (m *Manager) GetEnabledTools() []llm.Tool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	var tools []llm.Tool
-	for serverName, si := range m.servers {
-		if si.status != "running" {
-			continue
-		}
-		for _, t := range si.tools {
-			qualified := QualifyToolName(serverName, t.Name, m.separator)
-			info := ToolInfo{
-				Server: serverName,
-				Function: ToolFunction{
-					Name:        qualified,
-					Description: t.Description,
-					Parameters:  translateInputSchema(t.InputSchema),
-				},
-			}
-			tools = append(tools, TranslateToOpenAI(info))
-		}
+	tools := m.GetAllTools()
+	enabled := make([]llm.Tool, 0, len(tools))
+	for _, t := range tools {
+		enabled = append(enabled, TranslateToOpenAI(t))
 	}
-	return tools
+	return enabled
 }
 
 func (m *Manager) GetServerStatuses() map[string]ServerStatus {
