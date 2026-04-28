@@ -650,6 +650,24 @@ body {
   color: var(--error);
 }
 
+.clear-all-btn {
+  margin: 12px;
+  padding: 8px 14px;
+  background: transparent;
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-family: var(--serif);
+  font-size: 0.75rem;
+  transition: all var(--transition);
+}
+
+.clear-all-btn:hover {
+  color: var(--error);
+  border-color: var(--error);
+}
+
 /* Tool panel */
 .tool-panel {
   position: fixed;

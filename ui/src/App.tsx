@@ -128,6 +128,13 @@ export default function App() {
     })
   }, [activeId, preferences, chat, setConversations, setActiveId])
 
+  const handleClearAllData = useCallback(() => {
+    if (confirm('Delete all conversations, preferences, and data?')) {
+      localStorage.clear()
+      window.location.reload()
+    }
+  }, [])
+
   return (
     <div className="app-layout">
       {sidebarOpen && (
@@ -138,6 +145,7 @@ export default function App() {
             onSelect={setActiveId}
             onNew={handleNewConversation}
             onDelete={handleDeleteConversation}
+            onClearAll={handleClearAllData}
           />
         </aside>
       )}

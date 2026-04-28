@@ -6,9 +6,10 @@ interface Props {
   onSelect: (id: string) => void
   onNew: () => void
   onDelete: (id: string) => void
+  onClearAll?: () => void
 }
 
-export function ConversationList({ conversations, activeId, onSelect, onNew, onDelete }: Props) {
+export function ConversationList({ conversations, activeId, onSelect, onNew, onDelete, onClearAll }: Props) {
   return (
     <div className="conversation-list">
       <button className="new-chat-btn" onClick={onNew}>New conversation</button>
@@ -29,6 +30,11 @@ export function ConversationList({ conversations, activeId, onSelect, onNew, onD
           </div>
         ))}
       </div>
+      {onClearAll && (
+        <button className="clear-all-btn" onClick={onClearAll}>
+          Clear all data
+        </button>
+      )}
     </div>
   )
 }
