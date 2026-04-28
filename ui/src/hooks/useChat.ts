@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import type { Message, ActiveToolCall, SSEEvent, ToolCallResult, SystemPromptMode } from '../types'
+import { createSSEParser } from '../lib/sse'
 
 interface SendMessageOptions {
   model: string
@@ -69,110 +70,111 @@ export function useChat() {
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
-      let buffer = ''
+      const sseParser = createSSEParser()
+
+      const handleParsedEvent = (eventType: string, data: string) => {
+        try {
+          const parsed = JSON.parse(data)
+          const event = { type: eventType, ...parsed } as SSEEvent
+
+          switch (event.type) {
+            case 'delta': {
+              contentAccum += event.content
+              setStreamingContent(contentAccum)
+              break
+            }
+
+            case 'tool_call_start': {
+              const tc = getOrCreateActiveToolCall(toolCallsAccum, event.index)
+              if (event.id) tc.id = event.id
+              if (event.name) tc.name = event.name
+              setActiveToolCalls(new Map(toolCallsAccum))
+              break
+            }
+
+            case 'tool_call_args': {
+              const tc = getOrCreateActiveToolCall(toolCallsAccum, event.index)
+              if (event.id) tc.id = event.id
+              tc.argumentsSoFar += event.arguments_partial
+              tc.status = 'args_streaming'
+              setActiveToolCalls(new Map(toolCallsAccum))
+              break
+            }
+
+            case 'tool_call_approve': {
+              const tc = getOrCreateActiveToolCall(toolCallsAccum, event.index)
+              if (event.id) tc.id = event.id
+              if (event.name) tc.name = event.name
+              tc.status = 'awaiting_approval'
+              tc.argumentsSoFar = event.arguments
+              setActiveToolCalls(new Map(toolCallsAccum))
+              break
+            }
+
+            case 'tool_call_executing': {
+              const tc = getOrCreateActiveToolCall(toolCallsAccum, event.index)
+              if (event.id) tc.id = event.id
+              if (event.name) tc.name = event.name
+              tc.status = 'executing'
+              setActiveToolCalls(new Map(toolCallsAccum))
+              break
+            }
+
+            case 'tool_call_result': {
+              const tc = getOrCreateActiveToolCall(toolCallsAccum, event.index)
+              if (event.id) tc.id = event.id
+              if (event.name) tc.name = event.name
+              tc.status = event.status
+              tc.result = event.content
+              tc.durationMs = event.duration_ms
+              tc.errorCode = event.error_code
+              setActiveToolCalls(new Map(toolCallsAccum))
+              break
+            }
+
+            case 'round_complete': {
+              const assistantMessage = attachToolCallResults(event.assistant, toolCallsAccum)
+              committedMessages = [...committedMessages, assistantMessage, ...event.tool_messages]
+              setMessagesState(committedMessages)
+              contentAccum = ''
+              toolCallsAccum.clear()
+              setStreamingContent('')
+              setActiveToolCalls(new Map())
+              break
+            }
+
+            case 'error': {
+              sawErrorEvent = true
+              setError(event.message)
+              break
+            }
+
+            case 'done': {
+              receivedDone = true
+              setStreamingContent('')
+              setActiveToolCalls(new Map())
+              break
+            }
+          }
+        } catch {
+          // skip malformed JSON
+        }
+      }
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
 
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
+        const chunk = decoder.decode(value, { stream: true })
+        for (const event of sseParser.push(chunk)) {
+          handleParsedEvent(event.type, event.data)
+        }
+      }
 
-        let currentEventType = ''
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            currentEventType = line.slice(7).trim()
-          } else if (line.startsWith('data: ') && currentEventType) {
-            const data = line.slice(6)
-            try {
-              const parsed = JSON.parse(data)
-              const event = { type: currentEventType, ...parsed } as SSEEvent
-
-              switch (event.type) {
-                case 'delta': {
-                  contentAccum += event.content
-                  setStreamingContent(contentAccum)
-                  break
-                }
-
-                case 'tool_call_start': {
-                  const tc = getOrCreateActiveToolCall(toolCallsAccum, event.index)
-                  if (event.id) tc.id = event.id
-                  if (event.name) tc.name = event.name
-                  setActiveToolCalls(new Map(toolCallsAccum))
-                  break
-                }
-
-                case 'tool_call_args': {
-                  const tc = getOrCreateActiveToolCall(toolCallsAccum, event.index)
-                  if (event.id) tc.id = event.id
-                  tc.argumentsSoFar += event.arguments_partial
-                  tc.status = 'args_streaming'
-                  setActiveToolCalls(new Map(toolCallsAccum))
-                  break
-                }
-
-                case 'tool_call_approve': {
-                  const tc = getOrCreateActiveToolCall(toolCallsAccum, event.index)
-                  if (event.id) tc.id = event.id
-                  if (event.name) tc.name = event.name
-                  tc.status = 'awaiting_approval'
-                  tc.argumentsSoFar = event.arguments
-                  setActiveToolCalls(new Map(toolCallsAccum))
-                  break
-                }
-
-                case 'tool_call_executing': {
-                  const tc = getOrCreateActiveToolCall(toolCallsAccum, event.index)
-                  if (event.id) tc.id = event.id
-                  if (event.name) tc.name = event.name
-                  tc.status = 'executing'
-                  setActiveToolCalls(new Map(toolCallsAccum))
-                  break
-                }
-
-                case 'tool_call_result': {
-                  const tc = getOrCreateActiveToolCall(toolCallsAccum, event.index)
-                  if (event.id) tc.id = event.id
-                  if (event.name) tc.name = event.name
-                  tc.status = event.status
-                  tc.result = event.content
-                  tc.durationMs = event.duration_ms
-                  tc.errorCode = event.error_code
-                  setActiveToolCalls(new Map(toolCallsAccum))
-                  break
-                }
-
-                case 'round_complete': {
-                  const assistantMessage = attachToolCallResults(event.assistant, toolCallsAccum)
-                  committedMessages = [...committedMessages, assistantMessage, ...event.tool_messages]
-                  setMessagesState(committedMessages)
-                  contentAccum = ''
-                  toolCallsAccum.clear()
-                  setStreamingContent('')
-                  setActiveToolCalls(new Map())
-                  break
-                }
-
-                case 'error': {
-                  sawErrorEvent = true
-                  setError(event.message)
-                  break
-                }
-
-                case 'done': {
-                  receivedDone = true
-                  setStreamingContent('')
-                  setActiveToolCalls(new Map())
-                  break
-                }
-              }
-            } catch {
-              // skip malformed JSON
-            }
-            currentEventType = ''
-          }
+      const finalChunk = decoder.decode()
+      if (finalChunk) {
+        for (const event of sseParser.push(finalChunk)) {
+          handleParsedEvent(event.type, event.data)
         }
       }
 

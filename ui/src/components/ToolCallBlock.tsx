@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import type { ActiveToolCall } from '../types'
 
 interface Props {
@@ -9,12 +9,9 @@ interface Props {
 
 export function ToolCallBlock({ toolCall, onApprove, onDeny }: Props) {
   const needsApproval = toolCall.status === 'awaiting_approval' && !!toolCall.id
-  const [argsExpanded, setArgsExpanded] = useState(needsApproval)
+  const [argsExpanded, setArgsExpanded] = useState(false)
+  const showArgs = needsApproval || argsExpanded
   const displayName = toolCall.name || 'calling tool...'
-
-  useEffect(() => {
-    if (needsApproval) setArgsExpanded(true)
-  }, [needsApproval])
 
   const statusIndicator = () => {
     switch (toolCall.status) {
@@ -59,7 +56,7 @@ export function ToolCallBlock({ toolCall, onApprove, onDeny }: Props) {
         </div>
       )}
 
-      {argsExpanded && formattedArgs && (
+      {showArgs && formattedArgs && (
         <pre className="tool-call-args">{formattedArgs}</pre>
       )}
 
