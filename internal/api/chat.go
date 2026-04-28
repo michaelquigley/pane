@@ -49,27 +49,16 @@ func resolveModel(override string, cfg *config.Config) string {
 }
 
 func resolveSystemPrompt(req chatRequest, cfg *config.Config) string {
-	switch normalizeSystemPromptMode(req.SystemPromptMode, req.SystemPrompt) {
+	switch req.SystemPromptMode {
 	case "custom":
+		if strings.TrimSpace(req.SystemPrompt) == "" {
+			return ""
+		}
 		return req.SystemPrompt
 	case "none":
 		return ""
 	default:
 		return cfg.System
-	}
-}
-
-func normalizeSystemPromptMode(mode, custom string) string {
-	switch mode {
-	case "custom":
-		if strings.TrimSpace(custom) == "" {
-			return "none"
-		}
-		return "custom"
-	case "none":
-		return "none"
-	default:
-		return "default"
 	}
 }
 

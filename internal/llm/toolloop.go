@@ -148,16 +148,11 @@ func RunToolLoop(
 				}
 
 				// accumulate ID/name if they arrive in later chunks
-				previousID := existing.ID
-				previousName := existing.Name
 				if tc.ID != "" {
 					existing.ID = tc.ID
 				}
 				if tc.Function.Name != "" {
 					existing.Name = tc.Function.Name
-				}
-				if existing.ID != previousID || existing.Name != previousName {
-					emitToolCallStart(sw, existing)
 				}
 
 				// accumulate arguments

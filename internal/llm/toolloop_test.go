@@ -294,8 +294,6 @@ func TestRunToolLoopEmitsIndexedToolEventsForFragmentedMetadata(t *testing.T) {
 	assertEventTypes(t, events,
 		"tool_call_start",
 		"tool_call_args",
-		"tool_call_start",
-		"tool_call_start",
 		"tool_call_args",
 		"tool_call_executing",
 		"tool_call_result",
@@ -321,24 +319,8 @@ func TestRunToolLoopEmitsIndexedToolEventsForFragmentedMetadata(t *testing.T) {
 		t.Fatalf("unexpected initial tool_call_args payload: %#v", args0)
 	}
 
-	var start1 sse.ToolCallStartData
-	if err := json.Unmarshal(events[2].Data, &start1); err != nil {
-		t.Fatalf("unmarshaling name update tool_call_start: %v", err)
-	}
-	if start1.Index != 0 || start1.Name != "filesystem_read_file" || start1.ID != "" {
-		t.Fatalf("unexpected name update payload: %#v", start1)
-	}
-
-	var start2 sse.ToolCallStartData
-	if err := json.Unmarshal(events[3].Data, &start2); err != nil {
-		t.Fatalf("unmarshaling id update tool_call_start: %v", err)
-	}
-	if start2.Index != 0 || start2.Name != "filesystem_read_file" || start2.ID != "call_fragmented" {
-		t.Fatalf("unexpected id update payload: %#v", start2)
-	}
-
 	var result sse.ToolCallResultData
-	if err := json.Unmarshal(events[6].Data, &result); err != nil {
+	if err := json.Unmarshal(events[4].Data, &result); err != nil {
 		t.Fatalf("unmarshaling tool_call_result: %v", err)
 	}
 	if result.Index != 0 || result.ID != "call_fragmented" || result.Name != "filesystem_read_file" {
