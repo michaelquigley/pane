@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -174,6 +175,14 @@ func RunToolLoop(
 			return streamErr
 		}
 
+		// discard incomplete tool calls (empty name from partial LLM deltas)
+		for idx, p := range pending {
+			if p.Name == "" {
+				dl.Debugf("discarding incomplete tool call at index %d (id=%q, args=%q)", idx, p.ID, p.Arguments)
+				delete(pending, idx)
+			}
+		}
+
 		// build the assistant message
 		assistantMsg := Message{
 			Role: "assistant",
@@ -183,11 +192,21 @@ func RunToolLoop(
 		if content != "" {
 			assistantMsg.Content = &content
 		}
+		dl.Debugf("iteration %d: content=%q, pending=%d", iteration, content, len(pending))
+
+		// collect pending tool calls in stable index order
+		sortedPending := make([]*pendingToolCall, 0, len(pending))
+		for _, p := range pending {
+			sortedPending = append(sortedPending, p)
+		}
+		slices.SortFunc(sortedPending, func(a, b *pendingToolCall) int {
+			return a.Index - b.Index
+		})
 
 		// convert pending tool calls to finalized ToolCall slice
-		if len(pending) > 0 {
-			assistantMsg.ToolCalls = make([]ToolCall, 0, len(pending))
-			for _, p := range pending {
+		if len(sortedPending) > 0 {
+			assistantMsg.ToolCalls = make([]ToolCall, 0, len(sortedPending))
+			for _, p := range sortedPending {
 				assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, ToolCall{
 					ID:   p.ID,
 					Type: "function",
@@ -201,10 +220,10 @@ func RunToolLoop(
 
 		messages = append(messages, assistantMsg)
 
-		toolMessages := make([]Message, 0, len(pending))
+		toolMessages := make([]Message, 0, len(sortedPending))
 
 		// execute each tool call
-		for _, p := range pending {
+		for _, p := range sortedPending {
 			result := executeSingleTool(ctx, p, executor, sw, approvals)
 
 			resultContent := result.Content

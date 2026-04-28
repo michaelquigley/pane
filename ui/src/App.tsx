@@ -108,8 +108,8 @@ export default function App() {
   }, [setPreferences])
 
   const handleSend = useCallback((content: string) => {
-    if (!activeId) {
-      // auto-create conversation
+    let id = activeId
+    if (!id) {
       const conv: Conversation = {
         id: nanoid(),
         title: content.slice(0, 50),
@@ -119,21 +119,13 @@ export default function App() {
       }
       setConversations(prev => [conv, ...prev])
       setActiveId(conv.id)
-      // small delay to let state propagate
-      setTimeout(() => {
-        chat.sendMessage(content, {
-          model: preferences.modelOverride || '',
-          systemPromptMode: preferences.systemPromptMode,
-          systemPrompt: preferences.systemPromptCustom,
-        })
-      }, 0)
-    } else {
-      chat.sendMessage(content, {
-        model: preferences.modelOverride || '',
-        systemPromptMode: preferences.systemPromptMode,
-        systemPrompt: preferences.systemPromptCustom,
-      })
+      id = conv.id
     }
+    chat.sendMessage(content, {
+      model: preferences.modelOverride || '',
+      systemPromptMode: preferences.systemPromptMode,
+      systemPrompt: preferences.systemPromptCustom,
+    })
   }, [activeId, preferences, chat, setConversations, setActiveId])
 
   return (
