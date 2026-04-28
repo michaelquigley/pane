@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -248,12 +249,5 @@ func extractText(content []mcptypes.Content) string {
 			parts = append(parts, tc.Text)
 		}
 	}
-	if len(parts) == 0 {
-		return ""
-	}
-	result := parts[0]
-	for _, p := range parts[1:] {
-		result += "\n" + p
-	}
-	return result
+	return strings.Join(parts, "\n")
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/michaelquigley/df/dd"
@@ -111,12 +110,4 @@ func globalConfigPath() string {
 	return filepath.Join(home, ".config", "pane", "config.yaml")
 }
 
-func expandPath(path string) string {
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			path = filepath.Join(home, path[2:])
-		}
-	}
-	return os.ExpandEnv(path)
-}
+
