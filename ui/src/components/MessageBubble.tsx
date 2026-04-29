@@ -23,12 +23,11 @@ export function MessageBubble({
   onApprove,
   onDeny,
 }: Props) {
-  if (message.role === 'system') {
+  if (message.role === 'system' || message.role === 'tool') {
     return null
   }
 
   const isUser = message.role === 'user'
-  const isTool = message.role === 'tool'
   const content = isStreaming ? (streamingContent || '') : (message.content || '')
   const toolCalls = isStreaming
     ? Array.from(activeToolCalls?.values() || [])
@@ -45,17 +44,9 @@ export function MessageBubble({
       }))
 
   return (
-    <div className={`message ${isUser ? 'message-user' : isTool ? 'message-tool' : 'message-assistant'}`}>
+    <div className={`message ${isUser ? 'message-user' : 'message-assistant'}`}>
       {isUser ? (
         <div className="message-content user-content">{content}</div>
-      ) : isTool ? (
-        <details className="message-content tool-content">
-          <summary className="tool-disclosure-summary">
-            <span className="tool-message-label">tool result</span>
-            <span className="tool-disclosure-action" aria-hidden="true" />
-          </summary>
-          <pre>{content}</pre>
-        </details>
       ) : (
         <>
           {toolCalls.length > 0 && (

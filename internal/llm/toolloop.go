@@ -7,13 +7,20 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/michaelquigley/df/dl"
 	"github.com/michaelquigley/pane/internal/sse"
 )
 
-const maxToolLoopIterations = 20
+const (
+	maxToolLoopIterations          = 20
+	repeatedToolFailureThreshold   = 2
+	forceFinalAfterToolFailureText = "tool calls are disabled because the same tool call failed repeatedly. provide a final answer without calling tools."
+)
+
+var toolCallIDSequence atomic.Uint64
 
 // ToolExecutor abstracts MCP tool execution to avoid circular imports.
 type ToolExecutor interface {
@@ -47,6 +54,10 @@ type toolCallResult struct {
 	ErrorCode  string
 }
 
+type toolFailureTracker struct {
+	counts map[string]int
+}
+
 const (
 	toolCallStatusComplete = "complete"
 	toolCallStatusError    = "error"
@@ -66,6 +77,65 @@ func emitToolCallStart(sw *sse.Writer, p *pendingToolCall) {
 	})
 }
 
+func nextToolCallID(iteration, index int) string {
+	seq := toolCallIDSequence.Add(1)
+	return fmt.Sprintf("pane_call_%d_%d_%d", seq, iteration, index)
+}
+
+func newToolFailureTracker() *toolFailureTracker {
+	return &toolFailureTracker{
+		counts: make(map[string]int),
+	}
+}
+
+func (t *toolFailureTracker) observe(p *pendingToolCall, result toolCallResult) bool {
+	key := toolFailureKey(p)
+	if result.Status == toolCallStatusComplete {
+		delete(t.counts, key)
+		return false
+	}
+	if !isRepeatableToolFailure(result.ErrorCode) {
+		return false
+	}
+
+	t.counts[key]++
+	return t.counts[key] >= repeatedToolFailureThreshold
+}
+
+func isRepeatableToolFailure(errorCode string) bool {
+	switch errorCode {
+	case toolCallErrorDenied,
+		toolCallErrorApprovalTimeout,
+		toolCallErrorMalformedArguments,
+		toolCallErrorExecution:
+		return true
+	default:
+		return false
+	}
+}
+
+func toolFailureKey(p *pendingToolCall) string {
+	return p.Name + "\x00" + normalizeToolArguments(p.Arguments)
+}
+
+func normalizeToolArguments(arguments string) string {
+	trimmed := strings.TrimSpace(arguments)
+	if trimmed == "" {
+		return ""
+	}
+
+	var value any
+	if err := json.Unmarshal([]byte(trimmed), &value); err != nil {
+		return trimmed
+	}
+
+	normalized, err := json.Marshal(value)
+	if err != nil {
+		return trimmed
+	}
+	return string(normalized)
+}
+
 // RunToolLoop runs the full chat-with-tools loop: stream LLM response, execute
 // tool calls via MCP, append results, re-send until the LLM produces a final
 // content-only response.
@@ -79,16 +149,31 @@ func RunToolLoop(
 	sw *sse.Writer,
 	approvals ApprovalRegistry,
 ) error {
-	for iteration := 0; iteration < maxToolLoopIterations; iteration++ {
+	failures := newToolFailureTracker()
+	forceFinalResponse := false
+
+	for iteration := 0; iteration < maxToolLoopIterations || forceFinalResponse; iteration++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 
+		forcedFinalRequest := forceFinalResponse
+		forceFinalResponse = false
+
+		requestMessages := messages
+		if forcedFinalRequest {
+			requestMessages = append([]Message(nil), messages...)
+			requestMessages = append(requestMessages, Message{
+				Role:    "system",
+				Content: StringContent(forceFinalAfterToolFailureText),
+			})
+		}
+
 		req := &ChatRequest{
 			Model:    model,
-			Messages: messages,
+			Messages: requestMessages,
 		}
-		if len(tools) > 0 {
+		if len(tools) > 0 && !forcedFinalRequest {
 			req.Tools = tools
 		}
 
@@ -106,6 +191,7 @@ func RunToolLoop(
 		var contentBuf strings.Builder
 		pending := make(map[int]*pendingToolCall)
 		var streamErr error
+		sawToolCallDelta := false
 
 		for {
 			chunk, err := stream.Recv()
@@ -130,6 +216,9 @@ func RunToolLoop(
 			}
 
 			// tool call tokens
+			if len(delta.ToolCalls) > 0 {
+				sawToolCallDelta = true
+			}
 			for _, tc := range delta.ToolCalls {
 				idx := 0
 				if tc.Index != nil {
@@ -138,9 +227,8 @@ func RunToolLoop(
 
 				existing, ok := pending[idx]
 				if !ok {
-					// new tool call
 					existing = &pendingToolCall{
-						ID:    tc.ID,
+						ID:    nextToolCallID(iteration, idx),
 						Name:  tc.Function.Name,
 						Index: idx,
 					}
@@ -148,10 +236,7 @@ func RunToolLoop(
 					emitToolCallStart(sw, existing)
 				}
 
-				// accumulate ID/name if they arrive in later chunks
-				if tc.ID != "" {
-					existing.ID = tc.ID
-				}
+				// accumulate name if it arrives in later chunks
 				if tc.Function.Name != "" {
 					existing.Name = tc.Function.Name
 				}
@@ -173,6 +258,12 @@ func RunToolLoop(
 			dl.Errorf("stream error: %v", streamErr)
 			_ = sw.Send("error", sse.ErrorData{Code: "upstream_error", Message: streamErr.Error()})
 			return streamErr
+		}
+
+		if forcedFinalRequest && sawToolCallDelta {
+			err := fmt.Errorf("model returned tool calls after repeated tool failures")
+			_ = sw.Send("error", sse.ErrorData{Code: "repeated_tool_failure", Message: err.Error()})
+			return err
 		}
 
 		// discard incomplete tool calls (empty name from partial LLM deltas)
@@ -244,6 +335,10 @@ func RunToolLoop(
 				Content:    result.Content,
 				DurationMS: result.DurationMS,
 			})
+
+			if failures.observe(p, result) {
+				forceFinalResponse = true
+			}
 		}
 
 		_ = sw.Send("round_complete", roundCompleteData{
@@ -313,8 +408,8 @@ func executeSingleTool(
 
 	_ = sw.Send("tool_call_executing", sse.ToolCallExecutingData{
 		Index: p.Index,
-		ID:   p.ID,
-		Name: p.Name,
+		ID:    p.ID,
+		Name:  p.Name,
 	})
 
 	// parse arguments

@@ -29,7 +29,7 @@ listen: 127.0.0.1:8400
 
 # MCP servers
 #mcp:
-#  separator: "_"
+#  # pane generates model-safe function names automatically.
 #  servers:
 #    filesystem:
 #      command: mcp-filesystem

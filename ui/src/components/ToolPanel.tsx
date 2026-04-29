@@ -3,11 +3,10 @@ import type { ToolInfo, ServerStatus } from '../types'
 interface Props {
   tools: ToolInfo[]
   servers: Record<string, ServerStatus>
-  separator: string
   onClose: () => void
 }
 
-export function ToolPanel({ tools, servers, separator, onClose }: Props) {
+export function ToolPanel({ tools, servers, onClose }: Props) {
   const grouped = new Map<string, ToolInfo[]>()
   for (const tool of tools) {
     const list = grouped.get(tool.server) || []
@@ -33,7 +32,7 @@ export function ToolPanel({ tools, servers, separator, onClose }: Props) {
               </div>
               {serverTools.map(tool => (
                 <div key={tool.function.name} className="tool-entry">
-                  <div className="tool-entry-name">{displayToolName(tool.function.name, tool.server, separator)}</div>
+                  <div className="tool-entry-name">{tool.name}</div>
                   {tool.function.description && (
                     <div className="tool-entry-description">{tool.function.description}</div>
                   )}
@@ -48,12 +47,4 @@ export function ToolPanel({ tools, servers, separator, onClose }: Props) {
       </div>
     </div>
   )
-}
-
-function displayToolName(qualifiedName: string, serverName: string, separator: string): string {
-  const prefix = `${serverName}${separator}`
-  if (qualifiedName.startsWith(prefix)) {
-    return qualifiedName.slice(prefix.length)
-  }
-  return qualifiedName
 }

@@ -17,9 +17,9 @@ import (
 )
 
 type Manager struct {
-	servers   map[string]*ServerInstance
-	separator string
-	mu        sync.RWMutex
+	servers    map[string]*ServerInstance
+	toolRoutes map[string]toolRoute
+	mu         sync.RWMutex
 }
 
 type ServerInstance struct {
@@ -31,16 +31,18 @@ type ServerInstance struct {
 	err    string
 }
 
+type toolRoute struct {
+	server string
+	tool   string
+}
+
 func NewManager(cfg *config.MCPConfig) *Manager {
 	m := &Manager{
-		servers:   make(map[string]*ServerInstance),
-		separator: "_",
+		servers:    make(map[string]*ServerInstance),
+		toolRoutes: make(map[string]toolRoute),
 	}
 	if cfg == nil {
 		return m
-	}
-	if cfg.Separator != "" {
-		m.separator = cfg.Separator
 	}
 	for name, sc := range cfg.Servers {
 		m.servers[name] = &ServerInstance{
@@ -56,12 +58,19 @@ func (m *Manager) Start(ctx context.Context) {
 	for name, si := range m.servers {
 		dl.Infof("starting MCP server: %s", name)
 		if err := m.startServer(ctx, si); err != nil {
+			m.mu.Lock()
 			si.status = "error"
 			si.err = err.Error()
+			m.rebuildToolRoutesLocked()
+			m.mu.Unlock()
 			dl.Warnf("MCP server %s failed: %v", name, err)
 			continue
 		}
+		m.mu.Lock()
 		si.status = "running"
+		si.err = ""
+		m.rebuildToolRoutesLocked()
+		m.mu.Unlock()
 		dl.Infof("MCP server ready: %s (%d tools)", name, len(si.tools))
 		m.monitorStderr(name, si)
 	}
@@ -135,8 +144,14 @@ func (m *Manager) GetServer(name string) *ServerInstance {
 }
 
 func (m *Manager) GetAllTools() []ToolInfo {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.rebuildToolRoutesLocked()
+}
+
+func (m *Manager) rebuildToolRoutesLocked() []ToolInfo {
+	m.toolRoutes = make(map[string]toolRoute)
 
 	var tools []ToolInfo
 	for serverName, si := range m.servers {
@@ -144,11 +159,16 @@ func (m *Manager) GetAllTools() []ToolInfo {
 			continue
 		}
 		for _, t := range si.tools {
-			qualified := QualifyToolName(serverName, t.Name, m.separator)
+			callableName := callableToolName(serverName, t.Name)
+			m.toolRoutes[callableName] = toolRoute{
+				server: serverName,
+				tool:   t.Name,
+			}
 			tools = append(tools, ToolInfo{
 				Server: serverName,
+				Name:   t.Name,
 				Function: ToolFunction{
-					Name:        qualified,
+					Name:        callableName,
 					Description: t.Description,
 					Parameters:  translateInputSchema(t.InputSchema),
 				},
@@ -182,22 +202,17 @@ func (m *Manager) GetServerStatuses() map[string]ServerStatus {
 	return statuses
 }
 
-func (m *Manager) CallTool(ctx context.Context, qualifiedName string, args map[string]any) (string, time.Duration, error) {
-	server, tool := ParseToolName(qualifiedName, m.separator)
-
-	m.mu.RLock()
-	si, ok := m.servers[server]
-	m.mu.RUnlock()
-
+func (m *Manager) CallTool(ctx context.Context, callableName string, args map[string]any) (string, time.Duration, error) {
+	si, route, ok := m.resolveToolRoute(callableName)
 	if !ok {
-		return "", 0, fmt.Errorf("unknown server: %s", server)
+		return "", 0, fmt.Errorf("unknown tool: '%s'", callableName)
 	}
 	if si.status != "running" {
-		return "", 0, fmt.Errorf("server %s is not running (status: %s)", server, si.status)
+		return "", 0, fmt.Errorf("server '%s' is not running (status: '%s')", route.server, si.status)
 	}
 
 	timeout := 30 * time.Second
-	if si.config.Timeout != "" {
+	if si.config != nil && si.config.Timeout != "" {
 		if d, err := time.ParseDuration(si.config.Timeout); err == nil {
 			timeout = d
 		}
@@ -207,7 +222,7 @@ func (m *Manager) CallTool(ctx context.Context, qualifiedName string, args map[s
 	defer cancel()
 
 	req := mcptypes.CallToolRequest{}
-	req.Params.Name = tool
+	req.Params.Name = route.tool
 	req.Params.Arguments = args
 
 	start := time.Now()
@@ -215,7 +230,7 @@ func (m *Manager) CallTool(ctx context.Context, qualifiedName string, args map[s
 	duration := time.Since(start)
 
 	if err != nil {
-		return "", duration, fmt.Errorf("calling tool %s: %w", qualifiedName, err)
+		return "", duration, fmt.Errorf("calling tool '%s': %w", callableName, err)
 	}
 
 	if result.IsError {
@@ -229,17 +244,36 @@ func (m *Manager) CallTool(ctx context.Context, qualifiedName string, args map[s
 	return extractText(result.Content), duration, nil
 }
 
-func (m *Manager) NeedsApproval(qualifiedName string) bool {
-	server, _ := ParseToolName(qualifiedName, m.separator)
-
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	si, ok := m.servers[server]
+func (m *Manager) NeedsApproval(callableName string) bool {
+	si, _, ok := m.resolveToolRoute(callableName)
 	if !ok {
 		return false
 	}
+	if si.config == nil {
+		return false
+	}
 	return si.config.Approve
+}
+
+func (m *Manager) resolveToolRoute(callableName string) (*ServerInstance, toolRoute, bool) {
+	m.mu.RLock()
+	route, ok := m.toolRoutes[callableName]
+	if ok {
+		si, serverOK := m.servers[route.server]
+		m.mu.RUnlock()
+		return si, route, serverOK
+	}
+	m.mu.RUnlock()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.rebuildToolRoutesLocked()
+	route, ok = m.toolRoutes[callableName]
+	if !ok {
+		return nil, toolRoute{}, false
+	}
+	si, ok := m.servers[route.server]
+	return si, route, ok
 }
 
 func extractText(content []mcptypes.Content) string {

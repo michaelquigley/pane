@@ -19,9 +19,7 @@ listen: 127.0.0.1:8400
 
 # MCP servers
 mcp:
-  # tool namespace separator (default: "_")
-  # e.g., with "_": filesystem_read_file
-  separator: "_"
+  # pane generates model-safe function names automatically.
 
   servers:
     filesystem:

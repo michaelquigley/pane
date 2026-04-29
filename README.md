@@ -46,7 +46,6 @@ system: "You are a helpful assistant."
 listen: 127.0.0.1:8400
 
 mcp:
-  separator: "_"
   servers:
     filesystem:
       command: mcp-filesystem
@@ -61,6 +60,8 @@ mcp:
 pane spawns each configured MCP server as a child process and communicates via stdio. it discovers tools at startup, translates them to OpenAI function-calling format, and includes them in every chat request.
 
 tool calls from the LLM are routed back to the appropriate server, executed, and the results are streamed to the browser in real time.
+
+pane generates model-safe callable function names for discovered tools automatically and keeps each original MCP tool name for display and routing.
 
 servers with `approve: true` pause before execution and present the tool name and arguments for human review.
 

@@ -13,13 +13,19 @@ interface RequestSnapshot {
   options: SendMessageOptions
 }
 
+interface ActiveRequest {
+  id: number
+  controller: AbortController
+}
+
 export function useChat() {
   const [messages, setMessagesState] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingContent, setStreamingContent] = useState('')
   const [activeToolCalls, setActiveToolCalls] = useState<Map<number, ActiveToolCall>>(new Map())
   const [error, setError] = useState<string | null>(null)
-  const abortRef = useRef<AbortController | null>(null)
+  const activeRequestRef = useRef<ActiveRequest | null>(null)
+  const nextRequestIdRef = useRef(0)
   const lastRequestRef = useRef<RequestSnapshot | null>(null)
 
   const executeRequest = useCallback(async (
@@ -29,6 +35,21 @@ export function useChat() {
     lastRequestRef.current = {
       requestMessages,
       options: { ...options },
+    }
+
+    const previousRequest = activeRequestRef.current
+    const controller = new AbortController()
+    const request: ActiveRequest = {
+      id: nextRequestIdRef.current + 1,
+      controller,
+    }
+    nextRequestIdRef.current = request.id
+    activeRequestRef.current = request
+    previousRequest?.controller.abort()
+
+    const isCurrentRequest = () => {
+      const activeRequest = activeRequestRef.current
+      return activeRequest?.id === request.id && activeRequest.controller === request.controller
     }
 
     let committedMessages = requestMessages
@@ -42,12 +63,6 @@ export function useChat() {
     setStreamingContent('')
     setActiveToolCalls(new Map())
     setError(null)
-
-    // abort any in-flight request
-    abortRef.current?.abort()
-
-    const controller = new AbortController()
-    abortRef.current = controller
 
     try {
       const response = await fetch('/api/chat', {
@@ -63,8 +78,9 @@ export function useChat() {
       })
 
       if (!response.ok || !response.body) {
-        setError(`HTTP ${response.status}`)
-        setIsStreaming(false)
+        if (isCurrentRequest()) {
+          setError(`HTTP ${response.status}`)
+        }
         return
       }
 
@@ -73,6 +89,8 @@ export function useChat() {
       const sseParser = createSSEParser()
 
       const handleParsedEvent = (eventType: string, data: string) => {
+        if (!isCurrentRequest()) return
+
         try {
           const parsed = JSON.parse(data)
           const event = { type: eventType, ...parsed } as SSEEvent
@@ -162,23 +180,28 @@ export function useChat() {
       }
 
       while (true) {
+        if (!isCurrentRequest()) break
+
         const { done, value } = await reader.read()
         if (done) break
+        if (!isCurrentRequest()) break
 
         const chunk = decoder.decode(value, { stream: true })
         for (const event of sseParser.push(chunk)) {
+          if (!isCurrentRequest()) break
           handleParsedEvent(event.type, event.data)
         }
       }
 
       const finalChunk = decoder.decode()
-      if (finalChunk) {
+      if (finalChunk && isCurrentRequest()) {
         for (const event of sseParser.push(finalChunk)) {
+          if (!isCurrentRequest()) break
           handleParsedEvent(event.type, event.data)
         }
       }
 
-      if (!receivedDone) {
+      if (!receivedDone && isCurrentRequest()) {
         setStreamingContent('')
         setActiveToolCalls(new Map())
         if (!controller.signal.aborted && !sawErrorEvent) {
@@ -186,12 +209,14 @@ export function useChat() {
         }
       }
     } catch (e) {
-      if ((e as Error).name !== 'AbortError') {
+      if (isCurrentRequest() && (e as Error).name !== 'AbortError') {
         setError((e as Error).message)
       }
     } finally {
-      setIsStreaming(false)
-      abortRef.current = null
+      if (isCurrentRequest()) {
+        setIsStreaming(false)
+        activeRequestRef.current = null
+      }
     }
   }, [])
 
@@ -211,7 +236,12 @@ export function useChat() {
   }, [executeRequest, isStreaming])
 
   const setMessages = useCallback((value: Message[] | ((prev: Message[]) => Message[])) => {
+    const activeRequest = activeRequestRef.current
+    activeRequestRef.current = null
+    activeRequest?.controller.abort()
+
     lastRequestRef.current = null
+    setIsStreaming(false)
     setError(null)
     setStreamingContent('')
     setActiveToolCalls(new Map())
@@ -235,7 +265,13 @@ export function useChat() {
   }, [])
 
   const abort = useCallback(() => {
-    abortRef.current?.abort()
+    const activeRequest = activeRequestRef.current
+    activeRequestRef.current = null
+    activeRequest?.controller.abort()
+
+    setIsStreaming(false)
+    setStreamingContent('')
+    setActiveToolCalls(new Map())
   }, [])
 
   return {

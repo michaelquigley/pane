@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { nanoid } from 'nanoid'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { useConfig } from './hooks/useConfig'
@@ -24,6 +24,8 @@ export default function App() {
   const [preferences, setPreferences] = useLocalStorage<ChatPreferences>('pane:chatPreferences', defaultChatPreferences)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [toolPanelOpen, setToolPanelOpen] = useState(false)
+  const chatOwnerIdRef = useRef<string | null>(null)
+  const skipNextConversationSyncRef = useRef(false)
 
   const { config } = useConfig()
   const { models } = useModels()
@@ -43,6 +45,13 @@ export default function App() {
 
   // sync chat messages when switching conversations
   useEffect(() => {
+    if (skipNextConversationSyncRef.current) {
+      skipNextConversationSyncRef.current = false
+      chatOwnerIdRef.current = activeId
+      return
+    }
+
+    chatOwnerIdRef.current = activeId
     if (activeConversation) {
       chat.setMessages(activeConversation.messages)
     } else {
@@ -52,6 +61,7 @@ export default function App() {
 
   // save messages back to conversation when they change
   useEffect(() => {
+    if (chatOwnerIdRef.current !== activeId) return
     if (!activeId || chat.messages.length === 0) return
     setConversations(prev => prev.map(c => {
       if (c.id !== activeId) return c
@@ -61,6 +71,8 @@ export default function App() {
   }, [chat.messages]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleNewConversation = useCallback(() => {
+    chat.abort()
+
     const conv: Conversation = {
       id: nanoid(),
       title: '',
@@ -70,11 +82,23 @@ export default function App() {
     }
     setConversations(prev => [conv, ...prev])
     setActiveId(conv.id)
-  }, [setConversations, setActiveId])
+  }, [setConversations, setActiveId, chat])
+
+  const handleSelectConversation = useCallback((id: string) => {
+    if (id === activeId) return
+    chat.abort()
+    setActiveId(id)
+  }, [activeId, chat, setActiveId])
 
   const handleDeleteConversation = useCallback((id: string) => {
+    const deletingActive = activeId === id
+    if (deletingActive) {
+      chat.abort()
+      chatOwnerIdRef.current = null
+    }
+
     setConversations(prev => prev.filter(c => c.id !== id))
-    if (activeId === id) {
+    if (deletingActive) {
       setActiveId(null)
       chat.setMessages([])
     }
@@ -120,6 +144,10 @@ export default function App() {
       setConversations(prev => [conv, ...prev])
       setActiveId(conv.id)
       id = conv.id
+      chatOwnerIdRef.current = conv.id
+      skipNextConversationSyncRef.current = true
+    } else {
+      chatOwnerIdRef.current = id
     }
     chat.sendMessage(content, {
       model: preferences.modelOverride || '',
@@ -142,7 +170,7 @@ export default function App() {
           <ConversationList
             conversations={conversations}
             activeId={activeId}
-            onSelect={setActiveId}
+            onSelect={handleSelectConversation}
             onNew={handleNewConversation}
             onDelete={handleDeleteConversation}
             onClearAll={handleClearAllData}
@@ -192,7 +220,6 @@ export default function App() {
         <ToolPanel
           tools={tools}
           servers={servers}
-          separator={config.mcp_separator}
           onClose={() => setToolPanelOpen(false)}
         />
       )}

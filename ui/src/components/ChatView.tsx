@@ -55,8 +55,7 @@ export function ChatView({
     onSend(trimmed)
   }
 
-  // filter out system messages for display
-  const visibleMessages = messages.filter(m => m.role !== 'system')
+  const visibleMessages = messages.filter(m => m.role !== 'system' && m.role !== 'tool')
 
   return (
     <div className="chat-view">
