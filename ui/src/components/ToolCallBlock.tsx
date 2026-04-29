@@ -18,9 +18,9 @@ export function ToolCallBlock({ toolCall, onApprove, onDeny }: Props) {
       case 'loading':
       case 'args_streaming':
       case 'executing':
-        return <span className="tool-status-dot pulsing" />
+        return <span className="tool-status-text">{toolStatusLabel(toolCall.status)}</span>
       case 'awaiting_approval':
-        return <span className="tool-status-dot awaiting" />
+        return <span className="tool-status-text awaiting">waiting for approval</span>
       case 'complete':
         return <span className="tool-status-check">&#10003;</span>
       case 'error':
@@ -71,4 +71,17 @@ export function ToolCallBlock({ toolCall, onApprove, onDeny }: Props) {
       )}
     </div>
   )
+}
+
+function toolStatusLabel(status: ActiveToolCall['status']): string {
+  switch (status) {
+    case 'loading':
+      return 'preparing'
+    case 'args_streaming':
+      return 'reading'
+    case 'executing':
+      return 'working'
+    default:
+      return ''
+  }
 }
