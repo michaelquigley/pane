@@ -10,7 +10,7 @@ interface Props {
 export function ToolCallBlock({ toolCall, onApprove, onDeny }: Props) {
   const needsApproval = toolCall.status === 'awaiting_approval' && !!toolCall.id
   const [argsExpanded, setArgsExpanded] = useState(false)
-  const showArgs = needsApproval || argsExpanded
+  const showDetails = needsApproval || argsExpanded
   const displayName = toolCall.name || 'calling tool...'
 
   const statusIndicator = () => {
@@ -47,6 +47,9 @@ export function ToolCallBlock({ toolCall, onApprove, onDeny }: Props) {
         {toolCall.durationMs !== undefined && (
           <span className="tool-call-duration">{toolCall.durationMs}ms</span>
         )}
+        {toolCall.result !== undefined && (
+          <span className="tool-disclosure-action" aria-hidden="true" />
+        )}
       </div>
 
       {needsApproval && (
@@ -56,18 +59,15 @@ export function ToolCallBlock({ toolCall, onApprove, onDeny }: Props) {
         </div>
       )}
 
-      {showArgs && formattedArgs && (
+      {showDetails && formattedArgs && (
         <pre className="tool-call-args">{formattedArgs}</pre>
       )}
 
-      {toolCall.result !== undefined && (
-        <details className="tool-call-result-section">
-          <summary className="tool-disclosure-summary">
-            <span className="tool-message-label">tool result</span>
-            <span className="tool-disclosure-action" aria-hidden="true" />
-          </summary>
+      {showDetails && toolCall.result !== undefined && (
+        <div className="tool-call-result-section">
+          <span className="tool-message-label">tool result</span>
           <pre className="tool-call-result">{toolCall.result}</pre>
-        </details>
+        </div>
       )}
     </div>
   )

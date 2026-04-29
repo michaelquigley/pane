@@ -11,6 +11,7 @@ interface Props {
   isStreaming?: boolean
   streamingContent?: string
   activeToolCalls?: Map<number, ActiveToolCall>
+  compact?: boolean
   onApprove?: (id: string) => void
   onDeny?: (id: string) => void
 }
@@ -20,6 +21,7 @@ export function MessageBubble({
   isStreaming,
   streamingContent,
   activeToolCalls,
+  compact,
   onApprove,
   onDeny,
 }: Props) {
@@ -44,7 +46,7 @@ export function MessageBubble({
       }))
 
   return (
-    <div className={`message ${isUser ? 'message-user' : 'message-assistant'}`}>
+    <div className={`message ${isUser ? 'message-user' : 'message-assistant'}${compact ? ' message-compact' : ''}`}>
       {isUser ? (
         <div className="message-content user-content markdown-content">
           <MarkdownBody content={content} />

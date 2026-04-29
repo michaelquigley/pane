@@ -62,7 +62,11 @@ export function ChatView({
       <div className="messages-container">
         <div className="messages">
           {visibleMessages.map((msg, i) => (
-            <MessageBubble key={i} message={msg} />
+            <MessageBubble
+              key={i}
+              message={msg}
+              compact={shouldCompactMessage(msg, visibleMessages[i - 1])}
+            />
           ))}
 
           {isStreaming && (
@@ -119,4 +123,16 @@ export function ChatView({
       </div>
     </div>
   )
+}
+
+function shouldCompactMessage(message: Message, previous?: Message): boolean {
+  return isToolOnlyAssistantMessage(message) && (
+    !previous || isToolOnlyAssistantMessage(previous) || previous.role === 'assistant'
+  )
+}
+
+function isToolOnlyAssistantMessage(message: Message): boolean {
+  return message.role === 'assistant'
+    && !message.content
+    && !!message.tool_calls?.length
 }
