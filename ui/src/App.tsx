@@ -10,6 +10,12 @@ import { ConversationList } from './components/ConversationList'
 import { ModelSelector } from './components/ModelSelector'
 import { SystemPromptEditor } from './components/SystemPromptEditor'
 import { ToolPanel } from './components/ToolPanel'
+import {
+  buildConversationMarkdownFilename,
+  conversationToMarkdown,
+  downloadMarkdown,
+  hasExportableMessages,
+} from './lib/exportMarkdown'
 import type { Conversation, ChatPreferences, SystemPromptMode } from './types'
 
 const defaultChatPreferences: ChatPreferences = {
@@ -42,6 +48,17 @@ export default function App() {
   }, [setPreferences])
 
   const activeConversation = conversations.find(c => c.id === activeId)
+  const activeExportConversation = activeConversation
+    ? {
+        ...activeConversation,
+        title: activeConversation.title || extractTitle(chat.messages),
+        messages: chat.messages,
+        updatedAt: Date.now(),
+      }
+    : null
+  const canExportActiveConversation = activeExportConversation
+    ? hasExportableMessages(activeExportConversation)
+    : false
 
   // sync chat messages when switching conversations
   useEffect(() => {
@@ -163,6 +180,14 @@ export default function App() {
     }
   }, [])
 
+  const handleExportConversation = useCallback(() => {
+    if (!activeExportConversation || !hasExportableMessages(activeExportConversation)) return
+
+    const markdown = conversationToMarkdown(activeExportConversation)
+    const filename = buildConversationMarkdownFilename(activeExportConversation)
+    downloadMarkdown(filename, markdown)
+  }, [activeExportConversation])
+
   return (
     <div className="app-layout">
       {sidebarOpen && (
@@ -197,6 +222,13 @@ export default function App() {
             onCustomChange={handleSystemPromptCustomChange}
           />
           <div className="header-spacer" />
+          <button
+            className="header-btn"
+            onClick={handleExportConversation}
+            disabled={!canExportActiveConversation}
+          >
+            Export
+          </button>
           <button className="header-btn" onClick={() => setToolPanelOpen(!toolPanelOpen)}>
             Tools{tools.length > 0 && ` (${tools.length})`}
           </button>

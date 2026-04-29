@@ -103,6 +103,16 @@ body {
   background: var(--bg-muted);
 }
 
+.header-btn:disabled {
+  color: var(--fg-muted);
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.header-btn:disabled:hover {
+  background: none;
+}
+
 .header-spacer {
   flex: 1;
 }
