@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,300..800&display=swap');
+
 :root {
   --bg: #faf8f5;
   --fg: #2d2a26;
@@ -10,8 +12,8 @@
   --error: #c44d1d;
   --success: #3d8c40;
   --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
-  --serif: 'PT Serif', Georgia, 'Times New Roman', serif;
-  --chat-width: 900px;
+  --serif: 'Literata', Georgia, 'Times New Roman', serif;
+  --chat-width: 960px;
   --radius: 6px;
   --transition: 150ms ease;
 }
@@ -214,35 +216,39 @@ body {
   max-width: 100%;
 }
 
-.assistant-content p {
+.user-content {
+  white-space: pre-wrap;
+}
+
+.markdown-content p {
   margin-bottom: 1.45em;
 }
 
-.assistant-content p:last-child {
+.markdown-content p:last-child {
   margin-bottom: 0;
 }
 
-.assistant-content h1 {
+.markdown-content h1 {
   margin-top: 2.25em;
   margin-bottom: 1.35em;
   line-height: 1.2;
 }
 
-.assistant-content h1:first-child {
+.markdown-content h1:first-child {
   margin-top: 0.65em;
 }
 
-.assistant-content h2 {
+.markdown-content h2 {
   margin-top: 2em;
   margin-bottom: 1.15em;
   line-height: 1.25;
 }
 
-.assistant-content h2:first-child {
+.markdown-content h2:first-child {
   margin-top: 0.55em;
 }
 
-.assistant-content pre {
+.markdown-content pre {
   background: var(--bg-muted);
   padding: 18px;
   border-radius: var(--radius);
@@ -253,45 +259,60 @@ body {
   line-height: 1.65;
 }
 
-.assistant-content code {
+.markdown-content code {
   font-family: var(--mono);
   font-size: 0.9em;
 }
 
-.assistant-content :not(pre) > code {
+.markdown-content :not(pre) > code {
   background: var(--bg-muted);
   padding: 2px 5px;
   border-radius: 3px;
 }
 
-.assistant-content table {
+.markdown-content table {
   border-collapse: collapse;
   margin: 1.5em 0;
   width: 100%;
 }
 
-.assistant-content th,
-.assistant-content td {
+.markdown-content th,
+.markdown-content td {
   border: 1px solid var(--border);
   padding: 10px 14px;
   text-align: left;
 }
 
-.assistant-content th {
+.markdown-content th {
   background: var(--bg-muted);
 }
 
-.assistant-content a {
+.markdown-content a {
   color: var(--accent);
 }
 
-.assistant-content ul,
-.assistant-content ol {
+.markdown-content ul,
+.markdown-content ol {
   padding-left: 1.5em;
   margin: 1.25em 0;
 }
 
-.assistant-content hr {
+.markdown-content blockquote {
+  border-left: 3px solid var(--border);
+  color: var(--fg-muted);
+  margin: 1em 0;
+  padding: 0.1em 0 0.1em 1em;
+}
+
+.markdown-content blockquote p {
+  margin-bottom: 0.7em;
+}
+
+.markdown-content blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content hr {
   border: 0;
   border-top: 1px solid var(--border);
   margin: 2.4375em 0;
@@ -528,7 +549,6 @@ body {
 /* Input area */
 .input-area {
   padding: 36px 20px 40px;
-  border-top: 1px solid var(--border);
   display: flex;
   align-items: flex-start;
   gap: 16px;
@@ -548,7 +568,7 @@ body {
   font-size: 0.9375rem;
   resize: vertical;
   line-height: 1.7;
-  min-height: 120px;
+  min-height: 173px;
   max-height: 300px;
 }
 

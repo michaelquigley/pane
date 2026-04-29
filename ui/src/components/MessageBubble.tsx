@@ -46,7 +46,9 @@ export function MessageBubble({
   return (
     <div className={`message ${isUser ? 'message-user' : 'message-assistant'}`}>
       {isUser ? (
-        <div className="message-content user-content">{content}</div>
+        <div className="message-content user-content markdown-content">
+          <MarkdownBody content={content} />
+        </div>
       ) : (
         <>
           {toolCalls.length > 0 && (
@@ -61,27 +63,9 @@ export function MessageBubble({
               ))}
             </div>
           )}
-	          {content && (
-	            <div className="message-content assistant-content">
-	              <ReactMarkdown
-	                remarkPlugins={[remarkGfm]}
-	                components={{
-	                  code({ className, children, ...props }) {
-	                    const match = /language-(\w+)/.exec(className || '')
-	                    const code = String(children).replace(/\n$/, '')
-	                    if (match) {
-	                      return (
-	                        <Suspense fallback={<pre>{code}</pre>}>
-	                          <MarkdownCodeBlock language={match[1]} code={code} />
-	                        </Suspense>
-	                      )
-	                    }
-	                    return <code className={className} {...props}>{children}</code>
-	                  }
-                }}
-              >
-                {content}
-              </ReactMarkdown>
+          {content && (
+            <div className="message-content assistant-content markdown-content">
+              <MarkdownBody content={content} />
               {isStreaming && <span className="streaming-cursor" />}
             </div>
           )}
@@ -93,5 +77,29 @@ export function MessageBubble({
         </>
       )}
     </div>
+  )
+}
+
+function MarkdownBody({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        code({ className, children, ...props }) {
+          const match = /language-(\w+)/.exec(className || '')
+          const code = String(children).replace(/\n$/, '')
+          if (match) {
+            return (
+              <Suspense fallback={<pre>{code}</pre>}>
+                <MarkdownCodeBlock language={match[1]} code={code} />
+              </Suspense>
+            )
+          }
+          return <code className={className} {...props}>{children}</code>
+        },
+      }}
+    >
+      {content}
+    </ReactMarkdown>
   )
 }

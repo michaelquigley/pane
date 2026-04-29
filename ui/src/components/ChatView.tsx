@@ -49,10 +49,10 @@ export function ChatView({
   }
 
   const handleSend = () => {
-    const trimmed = input.trim()
-    if (!trimmed || isStreaming) return
+    if (!input.trim() || isStreaming) return
+    const content = input
     setInput('')
-    onSend(trimmed)
+    onSend(content)
   }
 
   const visibleMessages = messages.filter(m => m.role !== 'system' && m.role !== 'tool')
