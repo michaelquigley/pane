@@ -6,6 +6,89 @@ import type { Message, ActiveToolCall } from '../types'
 
 const MarkdownCodeBlock = lazy(() => import('./MarkdownCodeBlock'))
 
+const latexSymbolReplacements: Record<string, string> = {
+  '\\alpha': 'α',
+  '\\beta': 'β',
+  '\\gamma': 'γ',
+  '\\delta': 'δ',
+  '\\epsilon': 'ε',
+  '\\zeta': 'ζ',
+  '\\eta': 'η',
+  '\\theta': 'θ',
+  '\\iota': 'ι',
+  '\\kappa': 'κ',
+  '\\lambda': 'λ',
+  '\\mu': 'μ',
+  '\\nu': 'ν',
+  '\\xi': 'ξ',
+  '\\pi': 'π',
+  '\\rho': 'ρ',
+  '\\sigma': 'σ',
+  '\\tau': 'τ',
+  '\\upsilon': 'υ',
+  '\\phi': 'φ',
+  '\\chi': 'χ',
+  '\\psi': 'ψ',
+  '\\omega': 'ω',
+  '\\Gamma': 'Γ',
+  '\\Delta': 'Δ',
+  '\\Theta': 'Θ',
+  '\\Lambda': 'Λ',
+  '\\Xi': 'Ξ',
+  '\\Pi': 'Π',
+  '\\Sigma': 'Σ',
+  '\\Upsilon': 'Υ',
+  '\\Phi': 'Φ',
+  '\\Psi': 'Ψ',
+  '\\Omega': 'Ω',
+  '\\rightarrow': '→',
+  '\\to': '→',
+  '\\leftarrow': '←',
+  '\\leftrightarrow': '↔',
+  '\\longrightarrow': '⟶',
+  '\\longleftarrow': '⟵',
+  '\\longleftrightarrow': '⟷',
+  '\\Rightarrow': '⇒',
+  '\\Leftarrow': '⇐',
+  '\\Leftrightarrow': '⇔',
+  '\\uparrow': '↑',
+  '\\downarrow': '↓',
+  '\\updownarrow': '↕',
+  '\\mapsto': '↦',
+  '\\times': '×',
+  '\\div': '÷',
+  '\\cdot': '·',
+  '\\pm': '±',
+  '\\mp': '∓',
+  '\\le': '≤',
+  '\\leq': '≤',
+  '\\ge': '≥',
+  '\\geq': '≥',
+  '\\ne': '≠',
+  '\\neq': '≠',
+  '\\approx': '≈',
+  '\\equiv': '≡',
+  '\\sim': '∼',
+  '\\propto': '∝',
+  '\\infty': '∞',
+  '\\partial': '∂',
+  '\\nabla': '∇',
+  '\\forall': '∀',
+  '\\exists': '∃',
+  '\\in': '∈',
+  '\\notin': '∉',
+  '\\subset': '⊂',
+  '\\subseteq': '⊆',
+  '\\supset': '⊃',
+  '\\supseteq': '⊇',
+  '\\cup': '∪',
+  '\\cap': '∩',
+  '\\emptyset': '∅',
+  '\\varnothing': '∅',
+  '\\angle': '∠',
+  '\\degree': '°',
+}
+
 interface Props {
   message: Message
   isStreaming?: boolean
@@ -101,7 +184,112 @@ function MarkdownBody({ content }: { content: string }) {
         },
       }}
     >
-      {content}
+      {replaceLatexSymbolSpans(content)}
     </ReactMarkdown>
   )
+}
+
+function replaceLatexSymbolSpans(content: string): string {
+  let inFence: string | null = null
+
+  return content
+    .split('\n')
+    .map(line => {
+      const fenceMatch = /^(?: {0,3})(`{3,}|~{3,})/.exec(line)
+      if (fenceMatch) {
+        const fenceChar = fenceMatch[1][0]
+        if (inFence === fenceChar) {
+          inFence = null
+        } else if (!inFence) {
+          inFence = fenceChar
+        }
+        return line
+      }
+
+      if (inFence) {
+        return line
+      }
+
+      return replaceLatexSymbolSpansOutsideInlineCode(line)
+    })
+    .join('\n')
+}
+
+function replaceLatexSymbolSpansOutsideInlineCode(line: string): string {
+  let output = ''
+  let index = 0
+
+  while (index < line.length) {
+    const codeStart = line.indexOf('`', index)
+    if (codeStart === -1) {
+      output += replaceLatexSymbolSpansInText(line.slice(index))
+      break
+    }
+
+    output += replaceLatexSymbolSpansInText(line.slice(index, codeStart))
+
+    let delimiterLength = 1
+    while (line[codeStart + delimiterLength] === '`') {
+      delimiterLength += 1
+    }
+
+    const delimiter = '`'.repeat(delimiterLength)
+    const codeEnd = line.indexOf(delimiter, codeStart + delimiterLength)
+    if (codeEnd === -1) {
+      output += line.slice(codeStart)
+      break
+    }
+
+    output += line.slice(codeStart, codeEnd + delimiterLength)
+    index = codeEnd + delimiterLength
+  }
+
+  return output
+}
+
+function replaceLatexSymbolSpansInText(text: string): string {
+  return text.replace(/\$([^$\n]+)\$/g, (match, expression: string) => {
+    return renderSimpleLatexExpression(expression) ?? match
+  })
+}
+
+function normalizeLatexSymbol(symbol: string): string {
+  return symbol.trim().replace(/^\\+/, '\\')
+}
+
+function renderSimpleLatexExpression(expression: string): string | null {
+  let output = ''
+  let index = 0
+
+  while (index < expression.length) {
+    const remaining = expression.slice(index)
+    const whitespaceMatch = /^\s+/.exec(remaining)
+    if (whitespaceMatch) {
+      output += whitespaceMatch[0]
+      index += whitespaceMatch[0].length
+      continue
+    }
+
+    const textMatch = /^\\text\{([^{}]*)\}/.exec(remaining)
+    if (textMatch) {
+      output += textMatch[1]
+      index += textMatch[0].length
+      continue
+    }
+
+    const symbolMatch = /^\\[A-Za-z]+/.exec(remaining)
+    if (symbolMatch) {
+      const replacement = latexSymbolReplacements[normalizeLatexSymbol(symbolMatch[0])]
+      if (!replacement) {
+        return null
+      }
+      output += replacement
+      index += symbolMatch[0].length
+      continue
+    }
+
+    return null
+  }
+
+  return output.trim().length > 0 ? output : null
 }

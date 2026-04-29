@@ -32,6 +32,10 @@ export function ChatView({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
+    resizeTextarea(textareaRef.current)
+  }, [input])
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, streamingContent, activeToolCalls])
 
@@ -103,7 +107,10 @@ export function ChatView({
           ref={textareaRef}
           className="chat-input"
           value={input}
-          onChange={e => setInput(e.target.value)}
+          onChange={e => {
+            setInput(e.target.value)
+            resizeTextarea(e.target)
+          }}
           onKeyDown={handleKeyDown}
           placeholder="Send a message..."
           rows={1}
@@ -135,4 +142,10 @@ function isToolOnlyAssistantMessage(message: Message): boolean {
   return message.role === 'assistant'
     && !message.content
     && !!message.tool_calls?.length
+}
+
+function resizeTextarea(textarea: HTMLTextAreaElement | null) {
+  if (!textarea) return
+  textarea.style.height = 'auto'
+  textarea.style.height = `${textarea.scrollHeight}px`
 }
