@@ -257,12 +257,12 @@ body {
 .markdown-content h4,
 .markdown-content h5,
 .markdown-content h6 {
-  font-weight: 500;
+  font-weight: 550;
 }
 
 .markdown-content strong,
 .markdown-content b {
-  font-weight: 600;
+  font-weight: 550;
 }
 
 .markdown-content h1 {
@@ -348,6 +348,7 @@ body {
 
 .markdown-content th {
   background: var(--bg-muted);
+  font-weight: 550;
 }
 
 .markdown-content a {
