@@ -1,4 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,300..800&display=swap');
+@import '@fontsource-variable/source-serif-4/opsz.css';
+@import '@fontsource-variable/source-serif-4/opsz-italic.css';
+@import '@fontsource-variable/jetbrains-mono/wght.css';
+@import '@fontsource-variable/jetbrains-mono/wght-italic.css';
 
 :root {
   --bg: #faf8f5;
@@ -11,8 +14,8 @@
   --accent-hover: #a86f18;
   --error: #c44d1d;
   --success: #3d8c40;
-  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
-  --serif: 'Literata', Georgia, 'Times New Roman', serif;
+  --mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+  --serif: 'Source Serif 4 Variable', Georgia, 'Times New Roman', serif;
   --chat-width: 960px;
   --radius: 6px;
   --transition: 150ms ease;

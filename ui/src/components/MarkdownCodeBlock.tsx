@@ -12,6 +12,8 @@ export default function MarkdownCodeBlock({ language, code }: Props) {
       style={oneDark}
       language={language}
       PreTag="div"
+      customStyle={{ fontFamily: 'var(--mono)' }}
+      codeTagProps={{ style: { fontFamily: 'var(--mono)' } }}
     >
       {code}
     </SyntaxHighlighter>
