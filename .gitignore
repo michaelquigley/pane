@@ -2,8 +2,6 @@ ui/dist/
 ui/node_modules/
 build/
 .idea
-CLAUDE.md
-AGENTS.md
 CODEX-*.md
 PI-*.md
 .codex

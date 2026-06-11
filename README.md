@@ -14,9 +14,8 @@ single binary. embedded web UI. first-class MCP stdio support. no docker, no dat
 ## quick start
 
 ```bash
-# build
-cd ui && npm install && npm run build && cd ..
-go install ./...
+# build (frontend + binary)
+make build
 
 # generate a config
 pane new
