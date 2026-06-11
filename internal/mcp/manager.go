@@ -14,6 +14,7 @@ import (
 	"github.com/michaelquigley/df/dl"
 	"github.com/michaelquigley/pane/internal/config"
 	"github.com/michaelquigley/pane/internal/llm"
+	"github.com/michaelquigley/push/build"
 )
 
 type Manager struct {
@@ -88,11 +89,16 @@ func (m *Manager) startServer(ctx context.Context, si *ServerInstance) error {
 	}
 	si.client = c
 
+	version := build.Version
+	if version == "" {
+		version = build.DevVersion
+	}
+
 	initReq := mcptypes.InitializeRequest{}
 	initReq.Params.ProtocolVersion = mcptypes.LATEST_PROTOCOL_VERSION
 	initReq.Params.ClientInfo = mcptypes.Implementation{
 		Name:    "pane",
-		Version: config.Version,
+		Version: version,
 	}
 
 	if _, err := c.Initialize(ctx, initReq); err != nil {

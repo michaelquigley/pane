@@ -466,6 +466,7 @@ the config cascade, lowest to highest priority: compiled defaults → `~/.config
 - **`spf13/cobra`** — CLI structure (`pane`, `pane new`, `pane version`).
 - **`michaelquigley/df/dl`** — logging (per project convention).
 - **`michaelquigley/df/dd`** — config marshaling (per project convention).
+- **`michaelquigley/push/build`** — shared versioning: version/commit/date stamped via ldflags in CI; `pane version` reports `build.Detail()`. developer builds fall back to `v0.1.x [developer build]`.
 - **hand-rolled LLM client** (`internal/llm`) — OpenAI-compatible chat completions, streaming, function calling. deliberately not a third-party library; see project rules.
 - **standard library** — `net/http`, `embed`, `encoding/json`, `os/exec`.
 
@@ -554,3 +555,7 @@ cd ui && npm run dev
 ```
 
 open `http://localhost:5173` for dev, `http://localhost:8400` for production.
+
+### versioning & releases
+
+versioning rides on the shared push infrastructure. CI (`.github/workflows/ci.yml`) lints and tests on every branch, then builds a stamped linux-amd64 binary using `ldflags.sh`/`version.sh` from the push repo — version, commit, build date, branch, and builder are injected into `github.com/michaelquigley/push/build`. pushing a `v*` tag produces a draft GitHub release with the packaged artifact. local `make build` binaries are unstamped and report `v0.1.x [developer build]`. release history lives in `CHANGELOG.md` (one `## vX.Y.Z` section per release).

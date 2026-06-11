@@ -1,20 +1,10 @@
 package main
 
-import (
-	"fmt"
-	"runtime"
-
-	"github.com/michaelquigley/pane/internal/config"
-	"github.com/spf13/cobra"
-)
+import "github.com/michaelquigley/push/build"
 
 func init() {
-	rootCmd.AddCommand(&cobra.Command{
-		Use:   "version",
-		Short: "show version information",
-		Args:  cobra.NoArgs,
-		Run: func(_ *cobra.Command, _ []string) {
-			fmt.Printf("pane %s (%s/%s)\n", config.Version, runtime.GOOS, runtime.GOARCH)
-		},
-	})
+	// pane is pre-release; advertise the dev base as v0.1.x for unstamped
+	// developer builds, anticipating v0.1.0 as the first release.
+	build.DevVersion = "v0.1.x"
+	rootCmd.AddCommand(build.NewVersionCmd("pane"))
 }

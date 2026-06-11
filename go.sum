@@ -26,6 +26,10 @@ github.com/mark3labs/mcp-go v0.43.2 h1:21PUSlWWiSbUPQwXIJ5WKlETixpFpq+WBpbMGDSVy
 github.com/mark3labs/mcp-go v0.43.2/go.mod h1:YnJfOL382MIWDx1kMY+2zsRHU/q78dBg9aFb8W6Thdw=
 github.com/michaelquigley/df v0.3.12 h1:puq7VvVvivH65XJy/AK/dWbtuRl3huDW3F5u1VPZ5Ow=
 github.com/michaelquigley/df v0.3.12/go.mod h1:Ym3uLqdbI6DxhqzLLtAzQ2ry7KfPKCjfXEgoOL23xfI=
+github.com/michaelquigley/figlet v0.1.0 h1:GXhiuV2uGxAgZL0xz/9ftdobgt00bLvFDDc1R0A2OV8=
+github.com/michaelquigley/figlet v0.1.0/go.mod h1:o01j/eykadr5SKE51qSYuvQ1n9AftzHtGuaAEK8252A=
+github.com/michaelquigley/push v0.2.1 h1:yz0O1yMTMNQGrrZCypD0pczbQUWXItQr76sQHUZD5YM=
+github.com/michaelquigley/push v0.2.1/go.mod h1:WyBvcNvx6LSOovnmw47I8wBT3i1gQWqxHlZ6JipeZkk=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/rogpeppe/go-internal v1.9.0 h1:73kH8U+JUqXU8lRuOHeVHaa/SZPifC7BkcraZVejAe8=

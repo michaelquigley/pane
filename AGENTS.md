@@ -19,6 +19,7 @@ pane is a single-binary chat client that proxies to any OpenAI-compatible comple
 - **frontend**: React 19 + TypeScript + Vite, embedded via go:embed
 - **markdown**: react-markdown + remark-gfm + react-syntax-highlighter
 - **fonts**: Source Serif 4 + JetBrains Mono, bundled via @fontsource-variable packages (embedded in the binary, no runtime font fetch)
+- **versioning**: github.com/michaelquigley/push/build — version/commit/date stamped via ldflags in CI (`.github/workflows/ci.yml`); developer builds report `v0.1.x [developer build]`
 
 ## package structure
 

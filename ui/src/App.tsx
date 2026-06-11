@@ -48,16 +48,8 @@ export default function App() {
   }, [setPreferences])
 
   const activeConversation = conversations.find(c => c.id === activeId)
-  const activeExportConversation = activeConversation
-    ? {
-        ...activeConversation,
-        title: activeConversation.title || extractTitle(chat.messages),
-        messages: chat.messages,
-        updatedAt: Date.now(),
-      }
-    : null
-  const canExportActiveConversation = activeExportConversation
-    ? hasExportableMessages(activeExportConversation)
+  const canExportActiveConversation = activeConversation
+    ? hasExportableMessages({ ...activeConversation, messages: chat.messages })
     : false
 
   // sync chat messages when switching conversations
@@ -181,12 +173,20 @@ export default function App() {
   }, [])
 
   const handleExportConversation = useCallback(() => {
-    if (!activeExportConversation || !hasExportableMessages(activeExportConversation)) return
+    if (!activeConversation) return
 
-    const markdown = conversationToMarkdown(activeExportConversation)
-    const filename = buildConversationMarkdownFilename(activeExportConversation)
+    const exportConversation = {
+      ...activeConversation,
+      title: activeConversation.title || extractTitle(chat.messages),
+      messages: chat.messages,
+      updatedAt: Date.now(),
+    }
+    if (!hasExportableMessages(exportConversation)) return
+
+    const markdown = conversationToMarkdown(exportConversation)
+    const filename = buildConversationMarkdownFilename(exportConversation)
     downloadMarkdown(filename, markdown)
-  }, [activeExportConversation])
+  }, [activeConversation, chat.messages])
 
   return (
     <div className="app-layout">
