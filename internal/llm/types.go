@@ -67,6 +67,33 @@ type Choice struct {
 type Delta struct {
 	Content   *string    `json:"content,omitempty"`
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	Reasoning *string    `json:"reasoning,omitempty"`
+}
+
+// UnmarshalJSON decodes the upstream streaming delta. reasoning tokens arrive
+// under two known spellings depending on the backend: `reasoning` (openai
+// o-style) and `reasoning_content` (the vllm / sglang family). Reasoning takes
+// `reasoning` when present, else `reasoning_content`, else stays nil.
+func (d *Delta) UnmarshalJSON(data []byte) error {
+	type wireDelta struct {
+		Content          *string    `json:"content"`
+		ToolCalls        []ToolCall `json:"tool_calls"`
+		Reasoning        *string    `json:"reasoning"`
+		ReasoningContent *string    `json:"reasoning_content"`
+	}
+
+	var wire wireDelta
+	if err := json.Unmarshal(data, &wire); err != nil {
+		return err
+	}
+
+	d.Content = wire.Content
+	d.ToolCalls = wire.ToolCalls
+	d.Reasoning = wire.Reasoning
+	if d.Reasoning == nil {
+		d.Reasoning = wire.ReasoningContent
+	}
+	return nil
 }
 
 // ModelsResponse is the response from GET /v1/models.

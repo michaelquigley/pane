@@ -215,6 +215,12 @@ func RunToolLoop(
 				_ = sw.Send("delta", sse.DeltaData{Content: *delta.Content})
 			}
 
+			// thinking tokens: pass-through only. llm.Message carries no
+			// reasoning field, so the re-sent history never echoes them.
+			if delta.Reasoning != nil && *delta.Reasoning != "" {
+				_ = sw.Send("thinking_delta", sse.ThinkingDeltaData{Content: *delta.Reasoning})
+			}
+
 			// tool call tokens
 			if len(delta.ToolCalls) > 0 {
 				sawToolCallDelta = true

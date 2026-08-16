@@ -173,6 +173,9 @@ this is the critical contract between backend and frontend. the backend emits a 
 #### event types
 
 ```
+event: thinking_delta
+data: {"content": "the user wants the README, so first i should check the repo layout"}
+
 event: delta
 data: {"content": "Here's the"}
 
@@ -199,6 +202,8 @@ data: {}
 ```
 
 `round_complete` fires after each tool round, carrying the assistant message (with its tool calls) and the tool result messages — the frontend appends these to the conversation so the history it sends next turn matches what the model actually saw.
+
+`thinking_delta` is the model's reasoning, streamed one token at a time and interleaved with `delta` and the tool-call events in upstream order. it is display-only by construction: the backend `llm.Message` type carries no reasoning field, so reasoning is never accumulated, never echoed in the `round_complete` payload, and never re-sent to the model. the upstream stream reader tolerates both known reasoning field spellings — `reasoning` (openai o-style) and `reasoning_content` (the vllm / sglang family) — and emits a single pane field regardless of which one appears on the wire.
 
 for servers with `approve: true`, an approval gate is inserted before `tool_call_executing`:
 
@@ -251,6 +256,7 @@ data: {"code": "upstream_unreachable", "message": "connection refused"}
 
 4. llm-gateway streams tokens:
    → backend emits `event: delta` for each content chunk
+   → backend emits `event: thinking_delta` for each reasoning chunk, when the model streams any
 
 5. llm-gateway emits a tool_call:
    → backend emits `event: tool_call_start` (frontend renders the tool block header)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -88,6 +89,182 @@ func (r *testApprovalRegistry) registeredIDs() []string {
 	ids := make([]string, len(r.registered))
 	copy(ids, r.registered)
 	return ids
+}
+
+func TestRunToolLoopStreamsThinkingDeltasAndKeepsResentHistoryClean(t *testing.T) {
+	t.Parallel()
+
+	var bodiesMu sync.Mutex
+	rawBodies := make([]string, 0, 2)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("reading request body: %v", err)
+		}
+
+		bodiesMu.Lock()
+		rawBodies = append(rawBodies, string(body))
+		requestCount := len(rawBodies)
+		bodiesMu.Unlock()
+
+		w.Header().Set("Content-Type", "text/event-stream")
+
+		switch requestCount {
+		case 1:
+			writeRawStreamData(t, w, `{"id":"chat-1","choices":[{"index":0,"delta":{"reasoning":"checking the repo layout"}}]}`)
+			writeStreamChunk(t, w, StreamChunk{
+				ID: "chat-1",
+				Choices: []Choice{{
+					Index: 0,
+					Delta: Delta{
+						Content: StringContent("let me check"),
+					},
+				}},
+			})
+			idx := 0
+			writeStreamChunk(t, w, StreamChunk{
+				ID: "chat-1",
+				Choices: []Choice{{
+					Index: 0,
+					Delta: Delta{
+						ToolCalls: []ToolCall{{
+							ID:    "call_1",
+							Type:  "function",
+							Index: &idx,
+							Function: ToolCallFunction{
+								Name:      "filesystem_read_file",
+								Arguments: `{"path":"README.md"}`,
+							},
+						}},
+					},
+				}},
+			})
+			writeRawStreamData(t, w, `{"id":"chat-1","choices":[{"index":0,"delta":{"reasoning_content":"the file should document usage"}}]}`)
+		case 2:
+			writeRawStreamData(t, w, `{"id":"chat-2","choices":[{"index":0,"delta":{"reasoning":"the answer is ready"}}]}`)
+			writeStreamChunk(t, w, StreamChunk{
+				ID: "chat-2",
+				Choices: []Choice{{
+					Index: 0,
+					Delta: Delta{
+						Content: StringContent("done"),
+					},
+				}},
+			})
+		default:
+			t.Fatalf("unexpected chat completion request %d", requestCount)
+		}
+
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-model", "")
+	recorder := httptest.NewRecorder()
+	sw, err := sse.NewWriter(recorder)
+	if err != nil {
+		t.Fatalf("creating SSE writer: %v", err)
+	}
+
+	err = RunToolLoop(
+		context.Background(),
+		client,
+		[]Message{{Role: "user", Content: StringContent("read the README")}},
+		"test-model",
+		[]Tool{{
+			Type: "function",
+			Function: &FunctionDef{
+				Name:       "filesystem_read_file",
+				Parameters: json.RawMessage(`{"type":"object"}`),
+			},
+		}},
+		testExecutor{result: "README contents", duration: 8 * time.Millisecond},
+		sw,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("running tool loop: %v", err)
+	}
+
+	events := parseRecordedEvents(t, recorder.Body.String())
+	assertEventTypes(t, events,
+		"thinking_delta",
+		"delta",
+		"tool_call_start",
+		"tool_call_args",
+		"thinking_delta",
+		"tool_call_executing",
+		"tool_call_result",
+		"round_complete",
+		"thinking_delta",
+		"delta",
+		"round_complete",
+		"done",
+	)
+
+	thinkingContents := make([]string, 0, 3)
+	for _, event := range events {
+		if event.Type != "thinking_delta" {
+			continue
+		}
+		var payload sse.ThinkingDeltaData
+		if err := json.Unmarshal(event.Data, &payload); err != nil {
+			t.Fatalf("unmarshaling thinking_delta: %v", err)
+		}
+		thinkingContents = append(thinkingContents, payload.Content)
+	}
+	wantThinking := []string{
+		"checking the repo layout",
+		"the file should document usage",
+		"the answer is ready",
+	}
+	if len(thinkingContents) != len(wantThinking) {
+		t.Fatalf("expected %d thinking deltas, got %d", len(wantThinking), len(thinkingContents))
+	}
+	for idx, want := range wantThinking {
+		if thinkingContents[idx] != want {
+			t.Fatalf("thinking delta %d: expected %q, got %q", idx, want, thinkingContents[idx])
+		}
+	}
+
+	// round_complete assistant payloads marshal without a reasoning key
+	for _, event := range events {
+		if event.Type != "round_complete" {
+			continue
+		}
+		var round roundCompleteData
+		if err := json.Unmarshal(event.Data, &round); err != nil {
+			t.Fatalf("unmarshaling round_complete: %v", err)
+		}
+		assistantJSON, err := json.Marshal(round.Assistant)
+		if err != nil {
+			t.Fatalf("marshaling assistant message: %v", err)
+		}
+		if strings.Contains(string(assistantJSON), "reasoning") {
+			t.Fatalf("round_complete assistant payload carries reasoning: %s", assistantJSON)
+		}
+	}
+
+	bodiesMu.Lock()
+	bodies := append([]string(nil), rawBodies...)
+	bodiesMu.Unlock()
+
+	if len(bodies) != 2 {
+		t.Fatalf("expected 2 upstream requests, got %d", len(bodies))
+	}
+
+	// the round-2 body must re-send the round-1 history (tool result included)
+	if !strings.Contains(bodies[1], `"README contents"`) {
+		t.Fatalf("round-2 request body is missing the re-sent tool history: %s", bodies[1])
+	}
+
+	// the load-bearing assertion: no reasoning byte in any upstream request body
+	for idx, body := range bodies {
+		if strings.Contains(body, "reasoning") {
+			t.Fatalf("upstream request %d carries reasoning: %s", idx+1, body)
+		}
+	}
 }
 
 func TestRunToolLoopEmitsRoundCompletePerIteration(t *testing.T) {
@@ -1565,6 +1742,12 @@ func writeStreamChunk(t *testing.T, w http.ResponseWriter, chunk StreamChunk) {
 	if err != nil {
 		t.Fatalf("marshaling chunk: %v", err)
 	}
+	fmt.Fprintf(w, "data: %s\n\n", data)
+}
+
+func writeRawStreamData(t *testing.T, w http.ResponseWriter, data string) {
+	t.Helper()
+
 	fmt.Fprintf(w, "data: %s\n\n", data)
 }
 

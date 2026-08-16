@@ -1,10 +1,17 @@
 package api
 
 import (
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/michaelquigley/pane/internal/config"
 	"github.com/michaelquigley/pane/internal/llm"
+	"github.com/michaelquigley/pane/internal/mcp"
 )
 
 func TestResolveModelUsesDefaultWhenOverrideIsBlank(t *testing.T) {
@@ -112,5 +119,57 @@ func TestBuildChatMessagesSkipsSystemPromptWhenNoneResolved(t *testing.T) {
 
 	if got[0].Role != "user" {
 		t.Fatalf("expected user message, got %q", got[0].Role)
+	}
+}
+
+func TestHandleChatStripsReasoningFieldsFromUpstreamRequest(t *testing.T) {
+	var bodiesMu sync.Mutex
+	var upstreamBody string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("reading request body: %v", err)
+		}
+		bodiesMu.Lock()
+		upstreamBody = string(body)
+		bodiesMu.Unlock()
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"id\":\"chat-1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"}}]}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	api := &API{
+		cfg:       &config.Config{Model: "test-model"},
+		llm:       llm.NewClient(server.URL, "test-model", ""),
+		mcp:       mcp.NewManager(nil),
+		approvals: NewApprovalRegistry(),
+	}
+
+	// the request body carries stray reasoning fields under both known
+	// frontend spellings; neither may reach the upstream client
+	reqBody := `{"model":"","messages":[{"role":"user","content":"hello"},{"role":"assistant","content":"hi","reasoning":"stray reasoning","thinking":"stray thinking"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	api.handleChat(httptest.NewRecorder(), req)
+
+	bodiesMu.Lock()
+	body := upstreamBody
+	bodiesMu.Unlock()
+
+	if body == "" {
+		t.Fatalf("upstream client received no request")
+	}
+	if strings.Contains(body, "reasoning") {
+		t.Fatalf("upstream request body carries reasoning: %s", body)
+	}
+	if strings.Contains(body, "thinking") {
+		t.Fatalf("upstream request body carries thinking: %s", body)
+	}
+	if !strings.Contains(body, "hello") || !strings.Contains(body, "hi") {
+		t.Fatalf("upstream request body lost the message history: %s", body)
 	}
 }

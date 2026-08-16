@@ -49,6 +49,10 @@ type DeltaData struct {
 	Content string `json:"content"`
 }
 
+type ThinkingDeltaData struct {
+	Content string `json:"content"`
+}
+
 type ErrorData struct {
 	Code       string `json:"code"`
 	Message    string `json:"message"`
