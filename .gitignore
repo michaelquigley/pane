@@ -2,6 +2,7 @@ ui/dist/
 ui/node_modules/
 build/
 .mercurius/
+mercurius.yaml
 .idea
 CODEX-*.md
 PI-*.md
