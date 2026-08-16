@@ -107,7 +107,7 @@ pane/
 
 ## SSE streaming protocol
 
-the backend emits typed SSE events: `delta`, `tool_call_start`, `tool_call_args`, `tool_call_executing`, `tool_call_approve`, `tool_call_result`, `round_complete`, `error`, `done`. the event data types live in `internal/sse/writer.go`; the frontend state machine that consumes them is in `ui/src/hooks/useChat.ts`. `docs/current/pane.md` documents the full protocol and event lifecycle.
+the backend emits typed SSE events: `delta`, `thinking_delta`, `tool_call_start`, `tool_call_args`, `tool_call_executing`, `tool_call_approve`, `tool_call_result`, `round_complete`, `error`, `done`. the event data types live in `internal/sse/writer.go`; the frontend state machine that consumes them is in `ui/src/hooks/useChat.ts`. `docs/current/pane.md` documents the full protocol and event lifecycle.
 
 ## configuration
 

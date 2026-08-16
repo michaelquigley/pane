@@ -641,11 +641,13 @@ body {
 .thinking-block {
   border-left: 2px solid var(--border);
   padding: 1px 0 1px 14px;
-  margin-bottom: 12px;
+  margin: 24px 0;
 }
 
-.message-compact .thinking-block {
-  margin-bottom: 0;
+/* a tool-call group immediately after a thinking block takes no extra top
+   margin: the block's own bottom margin is the separator, in every layout */
+.thinking-block + .tool-calls {
+  margin-top: 0;
 }
 
 .thinking-block-header {
@@ -663,8 +665,6 @@ body {
   color: var(--fg-muted);
   font-size: 0.75rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .thinking-block-fragment {

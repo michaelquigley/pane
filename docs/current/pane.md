@@ -345,10 +345,13 @@ interface Message {
   tool_calls?: ToolCall[];                            // assistant messages with tool invocations
   tool_call_results?: Record<string, ToolCallResult>; // render state for completed tool calls
   tool_call_id?: string;                              // tool result messages
+  thinking?: string;                                  // the round's reasoning, display-only
+  thinkingCollapsed?: boolean;                        // per-block collapse state (undefined = expanded)
 }
 
 type SSEEvent =
   | { type: 'delta'; content: string }
+  | { type: 'thinking_delta'; content: string }
   | { type: 'tool_call_start'; index: number; id: string; name: string }
   | { type: 'tool_call_args'; index: number; id: string; arguments_partial: string }
   | { type: 'tool_call_approve'; index: number; id: string; name: string; arguments: string }
@@ -369,22 +372,25 @@ the `useChat` hook manages the streaming lifecycle. the chat POST returns an SSE
 4. read the SSE response body through the parser
 5. for each SSE event:
    - `delta` → append to the streaming buffer, render with cursor
+   - `thinking_delta` → append to the streaming thinking buffer, render the live thinking block
    - `tool_call_start` → create a ToolCallBlock in `loading` state
    - `tool_call_args` → update the ToolCallBlock with streaming arguments
    - `tool_call_approve` → flip the ToolCallBlock to `awaiting_approval`, show approve/deny buttons
    - `tool_call_executing` → flip the ToolCallBlock to `executing` state
    - `tool_call_result` → flip the ToolCallBlock to `complete` or `error`, show the result (collapsible)
-   - `round_complete` → commit the assistant and tool messages to the conversation history
+   - `round_complete` → commit the assistant and tool messages to the conversation history, grafting the round's accumulated thinking onto the committed assistant message
    - `error` → show an inline error (tool-level) or a stream-level error
    - `done` → finalize the assistant message
 6. save the conversation to localStorage
 
 tool call block states: `loading` → `args_streaming` → [`awaiting_approval` →] `executing` → `complete` | `error`. the approval state only appears for servers with `approve: true`.
 
+thinking is display-only, end to end. the frontend owns its life from stream to commit to storage: `thinking_delta` accumulates per round, the committed assistant message carries the round's `thinking` (and its per-block `thinkingCollapsed` state), and both persist in the conversation's localStorage entry — a reload returns the conversation exactly as the reader left it, collapsed blocks included. when the hook builds the `/api/chat` request body, it strips `thinking` and `thinkingCollapsed` from every message, so reasoning never reaches the backend; the backend's `llm.Message` type carries no reasoning field, so nothing reaches the model either. a response with no thinking tokens renders exactly as it did before — no block, no placeholder. accepted residual: thinking text is stored in localStorage with no cap, so a conversation with a thinking-heavy model grows accordingly; revisit when a conversation approaches the storage quota in real use.
+
 the UI:
 
-- **chat view.** messages rendered as markdown (with syntax-highlighted code blocks). streaming token display with a visible cursor/caret.
-- **tool call visibility.** when the LLM invokes a tool, show it inline — the tool name, arguments (collapsible), and result (collapsible). not hidden, not modal — part of the conversation flow. think Claude Desktop's tool use blocks.
+- **chat view.** messages rendered as markdown (with syntax-highlighted code blocks). streaming token display with a visible cursor/caret. assistant messages that carry thinking render a quiet thinking block above their content — live and always expanded while the turn streams, resting expanded at turn end, collapsible by the reader with the collapsed state persisting per message.
+- **tool call visibility.** when the LLM invokes a tool, show it inline — the tool name, arguments (collapsible), and result (collapsible). not hidden, not modal — part of the conversation flow. think Claude Desktop's tool use blocks. each round's thinking block sits above the tool calls that round motivated, so the reader sees the model reason its way into a call.
 - **model selector.** dropdown populated from `/api/models`. persisted in localStorage.
 - **tool panel.** slide-out sidebar showing discovered MCP tools and server statuses.
 - **system prompt.** editable, with default/custom/none modes, persisted in localStorage.

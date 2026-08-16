@@ -17,7 +17,7 @@ export function ThinkingBlock({ thinking, collapsed, streaming, onToggle }: Prop
         className={`thinking-block-header${interactive ? ' thinking-interactive' : ''}`}
         onClick={interactive ? () => onToggle!(!collapsed) : undefined}
       >
-        <span className="thinking-block-label">thinking</span>
+        <span className="thinking-block-label">thinking...</span>
         {isCollapsed && (
           <span className="thinking-block-fragment">{openingFragment(thinking)}</span>
         )}
