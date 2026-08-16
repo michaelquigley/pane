@@ -637,6 +637,69 @@ body {
   color: var(--fg);
 }
 
+/* Thinking block */
+.thinking-block {
+  border-left: 2px solid var(--border);
+  padding: 1px 0 1px 14px;
+  margin-bottom: 12px;
+}
+
+.message-compact .thinking-block {
+  margin-bottom: 0;
+}
+
+.thinking-block-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: 18px;
+}
+
+.thinking-block-header.thinking-interactive {
+  cursor: pointer;
+}
+
+.thinking-block-label {
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.thinking-block-fragment {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thinking-block-toggle {
+  color: var(--fg-muted);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  text-transform: lowercase;
+  margin-left: auto;
+}
+
+.thinking-block-header.thinking-interactive:hover .thinking-block-toggle,
+.thinking-block-header.thinking-interactive:focus-visible .thinking-block-toggle {
+  color: var(--fg);
+}
+
+.thinking-block-text {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 8px 0 0;
+}
+
 /* Input area */
 .input-area {
   padding: 36px 20px 40px;

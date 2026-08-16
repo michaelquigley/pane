@@ -18,6 +18,11 @@ export default tseslint.config(
       ecmaVersion: 2023,
       globals: globals.browser,
     },
+    rules: {
+      // omitting properties via rest destructuring is the idiom pane uses
+      // to strip fields (e.g. thinking) from wire messages
+      '@typescript-eslint/no-unused-vars': ['error', { ignoreRestSiblings: true }],
+    },
   },
   {
     files: ['eslint.config.js', 'vite.config.ts'],

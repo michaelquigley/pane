@@ -6,6 +6,7 @@ interface Props {
   messages: Message[]
   isStreaming: boolean
   streamingContent: string
+  streamingThinking: string
   activeToolCalls: Map<number, ActiveToolCall>
   error: string | null
   onSend: (content: string) => void
@@ -13,12 +14,14 @@ interface Props {
   onApprove: (id: string) => void
   onDeny: (id: string) => void
   onAbort: () => void
+  onToggleThinkingCollapsed: (messageIndex: number, collapsed: boolean) => void
 }
 
 export function ChatView({
   messages,
   isStreaming,
   streamingContent,
+  streamingThinking,
   activeToolCalls,
   error,
   onSend,
@@ -26,6 +29,7 @@ export function ChatView({
   onApprove,
   onDeny,
   onAbort,
+  onToggleThinkingCollapsed,
 }: Props) {
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -37,7 +41,7 @@ export function ChatView({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, streamingContent, activeToolCalls])
+  }, [messages, streamingContent, streamingThinking, activeToolCalls])
 
   useEffect(() => {
     if (!isStreaming) {
@@ -59,17 +63,22 @@ export function ChatView({
     onSend(content)
   }
 
-  const visibleMessages = messages.filter(m => m.role !== 'system' && m.role !== 'tool')
+  // visible messages keep their index in the full messages array, so the
+  // thinking-collapse toggle addresses the exact message a round committed
+  const visibleMessages = messages
+    .map((msg, index) => ({ msg, index }))
+    .filter(({ msg }) => msg.role !== 'system' && msg.role !== 'tool')
 
   return (
     <div className="chat-view">
       <div className="messages-container">
         <div className="messages">
-          {visibleMessages.map((msg, i) => (
+          {visibleMessages.map(({ msg, index }, i) => (
             <MessageBubble
-              key={i}
+              key={index}
               message={msg}
-              compact={shouldCompactMessage(msg, visibleMessages[i - 1])}
+              compact={shouldCompactMessage(msg, visibleMessages[i - 1]?.msg)}
+              onToggleThinking={collapsed => onToggleThinkingCollapsed(index, collapsed)}
             />
           ))}
 
@@ -78,6 +87,7 @@ export function ChatView({
               message={{ role: 'assistant', content: null }}
               isStreaming
               streamingContent={streamingContent}
+              streamingThinking={streamingThinking}
               activeToolCalls={activeToolCalls}
               onApprove={onApprove}
               onDeny={onDeny}

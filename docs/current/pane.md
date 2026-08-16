@@ -50,17 +50,17 @@ flowchart TB
 
 the core of the backend is a standard OpenAI tool-calling loop (`internal/llm/toolloop.go`):
 
-```
-1. receive user message from frontend (POST /api/chat)
-2. assemble messages array (system prompt + conversation history + user message)
-3. attach tool definitions (discovered from MCP servers, translated to OpenAI function format)
-4. POST to llm-gateway /v1/chat/completions (stream=true)
-5. if response contains tool_calls:
-     a. for each tool_call, route to the appropriate MCP server
-     b. execute via MCP stdio (concurrently when the model emits multiple calls)
-     c. append tool results to messages
-     d. goto 4
-6. stream final assistant response back to frontend via SSE
+```mermaid
+flowchart TD
+    a["1. receive user message (POST /api/chat)"] --> b["2. assemble messages: system prompt + conversation history + user message"]
+    b --> c["3. attach tool definitions discovered from MCP servers, translated to OpenAI function format"]
+    c --> d["4. POST /v1/chat/completions with stream=true"]
+    d --> e{"response contains tool_calls?"}
+    e -- "no" --> f["6. stream the final assistant response back to the frontend via SSE"]
+    e -- "yes" --> g["5a. route each tool_call to the appropriate MCP server"]
+    g --> h["5b. execute via MCP stdio, concurrently when the model emits multiple calls"]
+    h --> i["5c. append tool results to messages"]
+    i --> d
 ```
 
 two guards bound the loop. a hard iteration cap (`max_iterations` error if exceeded) prevents runaway loops, and a repeated-failure tracker watches for the same tool call failing again and again — after the threshold, the loop forces a final response by telling the model that tool calls are disabled and it must answer with what it has (`repeated_tool_failure` if the model persists anyway).
@@ -249,37 +249,23 @@ data: {"code": "upstream_unreachable", "message": "connection refused"}
 
 #### event lifecycle for a single turn
 
-```
-1. user sends POST /api/chat
-2. backend opens SSE stream
-3. backend submits to llm-gateway with stream=true
-
-4. llm-gateway streams tokens:
-   → backend emits `event: delta` for each content chunk
-   → backend emits `event: thinking_delta` for each reasoning chunk, when the model streams any
-
-5. llm-gateway emits a tool_call:
-   → backend emits `event: tool_call_start` (frontend renders the tool block header)
-   → backend emits `event: tool_call_args` as argument tokens arrive (frontend shows arguments building)
-
-6. tool_call is complete:
-   → if server has `approve: true`:
-     → backend emits `event: tool_call_approve` (frontend shows approve/deny buttons)
-     → backend waits on POST /api/tools/approve (5-minute timeout)
-     → if denied or timed out: inject failure as tool result, goto 7
-   → backend emits `event: tool_call_executing` (frontend shows executing state)
-   → backend dispatches to MCP manager → MCP server via stdio
-   → MCP server returns result
-   → backend emits `event: tool_call_result` (frontend shows result, collapses block)
-
-7. all tool calls in the round resolved:
-   → backend emits `event: round_complete` with the assistant and tool messages
-   → backend re-submits to llm-gateway with tool results appended to messages
-   → goto 4 (may produce more tool calls or final content)
-
-8. llm-gateway signals completion:
-   → backend emits `event: done`
-   → SSE stream closes
+```mermaid
+flowchart TD
+    a["1. user sends POST /api/chat"] --> b["2. backend opens the SSE stream"]
+    b --> c["3. backend submits to llm-gateway with stream=true"]
+    c --> d["4. llm-gateway streams tokens: delta and thinking_delta events"]
+    d --> e{"the stream carries tool_calls?"}
+    e -- "no" --> h["8. llm-gateway signals completion: done, SSE stream closes"]
+    e -- "yes" --> f["5. tool_call_start, then tool_call_args as argument tokens arrive"]
+    f --> g{"server has approve: true?"}
+    g -- "yes" --> i["6. tool_call_approve: wait on POST /api/tools/approve (5-minute timeout)"]
+    g -- "no" --> j["6. tool_call_executing: dispatch to the MCP server via stdio"]
+    i -- "approved" --> j
+    i -- "denied or timed out" --> k["inject the failure as the tool result"]
+    j --> l["6. tool_call_result with status and duration"]
+    k --> l
+    l --> m["7. round_complete with the assistant and tool messages; resubmit with results appended"]
+    m --> d
 ```
 
 #### multiple tool calls in one turn
@@ -377,23 +363,21 @@ type SSEEvent =
 
 the `useChat` hook manages the streaming lifecycle. the chat POST returns an SSE body which the hook reads via `fetch` and a hand-rolled parser (`lib/sse.ts`) — EventSource can't POST, so the stream is consumed from the response body directly.
 
-```
 1. user presses send
-2. append user message to conversation.messages
-3. POST /api/chat with full messages array
+2. append user message to `conversation.messages`
+3. POST `/api/chat` with the full messages array
 4. read the SSE response body through the parser
 5. for each SSE event:
-   - delta              → append to streaming buffer, render with cursor
-   - tool_call_start    → create a ToolCallBlock in "loading" state
-   - tool_call_args     → update ToolCallBlock with streaming arguments
-   - tool_call_approve  → flip ToolCallBlock to "awaiting_approval", show approve/deny buttons
-   - tool_call_executing → flip ToolCallBlock to "executing" state
-   - tool_call_result   → flip ToolCallBlock to "complete" or "error", show result (collapsible)
-   - round_complete     → commit assistant + tool messages to the conversation history
-   - error              → show inline error (tool-level) or stream-level error
-   - done               → finalize assistant message
-6. save conversation to localStorage
-```
+   - `delta` → append to the streaming buffer, render with cursor
+   - `tool_call_start` → create a ToolCallBlock in `loading` state
+   - `tool_call_args` → update the ToolCallBlock with streaming arguments
+   - `tool_call_approve` → flip the ToolCallBlock to `awaiting_approval`, show approve/deny buttons
+   - `tool_call_executing` → flip the ToolCallBlock to `executing` state
+   - `tool_call_result` → flip the ToolCallBlock to `complete` or `error`, show the result (collapsible)
+   - `round_complete` → commit the assistant and tool messages to the conversation history
+   - `error` → show an inline error (tool-level) or a stream-level error
+   - `done` → finalize the assistant message
+6. save the conversation to localStorage
 
 tool call block states: `loading` → `args_streaming` → [`awaiting_approval` →] `executing` → `complete` | `error`. the approval state only appears for servers with `approve: true`.
 

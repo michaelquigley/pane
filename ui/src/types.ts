@@ -12,6 +12,8 @@ export interface Message {
   tool_calls?: ToolCall[]
   tool_call_results?: Record<string, ToolCallResult>
   tool_call_id?: string
+  thinking?: string
+  thinkingCollapsed?: boolean
 }
 
 export interface ToolCall {
@@ -64,6 +66,7 @@ export interface ChatPreferences {
 
 export type SSEEvent =
   | { type: 'delta'; content: string }
+  | { type: 'thinking_delta'; content: string }
   | { type: 'tool_call_start'; index: number; id: string; name: string }
   | { type: 'tool_call_args'; index: number; id: string; arguments_partial: string }
   | { type: 'tool_call_executing'; index: number; id: string; name: string }

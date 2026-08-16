@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ToolCallBlock } from './ToolCallBlock'
+import { ThinkingBlock } from './ThinkingBlock'
 import type { Message, ActiveToolCall } from '../types'
 
 const MarkdownCodeBlock = lazy(() => import('./MarkdownCodeBlock'))
@@ -93,20 +94,24 @@ interface Props {
   message: Message
   isStreaming?: boolean
   streamingContent?: string
+  streamingThinking?: string
   activeToolCalls?: Map<number, ActiveToolCall>
   compact?: boolean
   onApprove?: (id: string) => void
   onDeny?: (id: string) => void
+  onToggleThinking?: (collapsed: boolean) => void
 }
 
 export function MessageBubble({
   message,
   isStreaming,
   streamingContent,
+  streamingThinking,
   activeToolCalls,
   compact,
   onApprove,
   onDeny,
+  onToggleThinking,
 }: Props) {
   if (message.role === 'system' || message.role === 'tool') {
     return null
@@ -114,6 +119,7 @@ export function MessageBubble({
 
   const isUser = message.role === 'user'
   const content = isStreaming ? (streamingContent || '') : (message.content || '')
+  const thinking = isStreaming ? (streamingThinking || '') : (message.thinking || '')
   const toolCalls = isStreaming
     ? Array.from(activeToolCalls?.values() || [])
     : (message.tool_calls || []).map((tc, index) => ({
@@ -136,6 +142,14 @@ export function MessageBubble({
         </div>
       ) : (
         <>
+          {thinking && (
+            <ThinkingBlock
+              thinking={thinking}
+              collapsed={!!message.thinkingCollapsed}
+              streaming={!!isStreaming}
+              onToggle={onToggleThinking}
+            />
+          )}
           {toolCalls.length > 0 && (
             <div className="tool-calls">
               {toolCalls.map(tc => (
@@ -154,7 +168,7 @@ export function MessageBubble({
               {isStreaming && <span className="streaming-cursor" />}
             </div>
           )}
-          {!content && isStreaming && toolCalls.length === 0 && (
+          {!content && !thinking && isStreaming && toolCalls.length === 0 && (
             <div className="message-content assistant-content">
               <span className="streaming-cursor" />
             </div>

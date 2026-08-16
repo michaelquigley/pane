@@ -238,6 +238,7 @@ export default function App() {
           messages={chat.messages}
           isStreaming={chat.isStreaming}
           streamingContent={chat.streamingContent}
+          streamingThinking={chat.streamingThinking}
           activeToolCalls={chat.activeToolCalls}
           error={chat.error}
           onSend={handleSend}
@@ -245,6 +246,7 @@ export default function App() {
           onApprove={chat.approveToolCall}
           onDeny={chat.denyToolCall}
           onAbort={chat.abort}
+          onToggleThinkingCollapsed={chat.setThinkingCollapsed}
         />
       </main>
 

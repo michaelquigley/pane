@@ -22,6 +22,7 @@ export function useChat() {
   const [messages, setMessagesState] = useState<Message[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const [streamingContent, setStreamingContent] = useState('')
+  const [streamingThinking, setStreamingThinking] = useState('')
   const [activeToolCalls, setActiveToolCalls] = useState<Map<number, ActiveToolCall>>(new Map())
   const [error, setError] = useState<string | null>(null)
   const activeRequestRef = useRef<ActiveRequest | null>(null)
@@ -54,6 +55,7 @@ export function useChat() {
 
     let committedMessages = requestMessages
     let contentAccum = ''
+    let thinkingAccum = ''
     const toolCallsAccum = new Map<number, ActiveToolCall>()
     let receivedDone = false
     let sawErrorEvent = false
@@ -61,8 +63,12 @@ export function useChat() {
     setMessagesState(requestMessages)
     setIsStreaming(true)
     setStreamingContent('')
+    setStreamingThinking('')
     setActiveToolCalls(new Map())
     setError(null)
+
+    // display-only: thinking is never returned to the model
+    const wireMessages = requestMessages.map(({ thinking, thinkingCollapsed, ...wireMessage }) => wireMessage)
 
     try {
       const response = await fetch('/api/chat', {
@@ -70,7 +76,7 @@ export function useChat() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: options.model,
-          messages: requestMessages,
+          messages: wireMessages,
           system_prompt_mode: options.systemPromptMode,
           ...(options.systemPromptMode === 'custom' ? { system_prompt: options.systemPrompt } : {}),
         }),
@@ -99,6 +105,12 @@ export function useChat() {
             case 'delta': {
               contentAccum += event.content
               setStreamingContent(contentAccum)
+              break
+            }
+
+            case 'thinking_delta': {
+              thinkingAccum += event.content
+              setStreamingThinking(thinkingAccum)
               break
             }
 
@@ -152,11 +164,16 @@ export function useChat() {
 
             case 'round_complete': {
               const assistantMessage = attachToolCallResults(event.assistant, toolCallsAccum)
-              committedMessages = [...committedMessages, assistantMessage, ...event.tool_messages]
+              const committedAssistant = thinkingAccum
+                ? { ...assistantMessage, thinking: thinkingAccum }
+                : assistantMessage
+              committedMessages = [...committedMessages, committedAssistant, ...event.tool_messages]
               setMessagesState(committedMessages)
               contentAccum = ''
+              thinkingAccum = ''
               toolCallsAccum.clear()
               setStreamingContent('')
+              setStreamingThinking('')
               setActiveToolCalls(new Map())
               break
             }
@@ -170,6 +187,7 @@ export function useChat() {
             case 'done': {
               receivedDone = true
               setStreamingContent('')
+              setStreamingThinking('')
               setActiveToolCalls(new Map())
               break
             }
@@ -203,6 +221,7 @@ export function useChat() {
 
       if (!receivedDone && isCurrentRequest()) {
         setStreamingContent('')
+        setStreamingThinking('')
         setActiveToolCalls(new Map())
         if (!controller.signal.aborted && !sawErrorEvent) {
           setError('Connection lost')
@@ -244,8 +263,21 @@ export function useChat() {
     setIsStreaming(false)
     setError(null)
     setStreamingContent('')
+    setStreamingThinking('')
     setActiveToolCalls(new Map())
     setMessagesState(value)
+  }, [])
+
+  const setThinkingCollapsed = useCallback((messageIndex: number, collapsed: boolean) => {
+    // functional update only: a captured-array replacement could clobber a
+    // tool-loop round that commits between capture and set. indices stay
+    // valid because rounds only append, and this disturbs no in-flight
+    // request (messages are read at request build time only).
+    setMessagesState(current => current.map((message, i) =>
+      i === messageIndex
+        ? { ...message, thinkingCollapsed: collapsed ? true : undefined }
+        : message,
+    ))
   }, [])
 
   const approveToolCall = useCallback((id: string) => {
@@ -271,6 +303,7 @@ export function useChat() {
 
     setIsStreaming(false)
     setStreamingContent('')
+    setStreamingThinking('')
     setActiveToolCalls(new Map())
   }, [])
 
@@ -279,6 +312,8 @@ export function useChat() {
     setMessages,
     isStreaming,
     streamingContent,
+    streamingThinking,
+    setThinkingCollapsed,
     activeToolCalls,
     error,
     sendMessage,
