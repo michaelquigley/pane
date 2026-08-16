@@ -1,6 +1,7 @@
 ui/dist/
 ui/node_modules/
 build/
+.mercurius/
 .idea
 CODEX-*.md
 PI-*.md
