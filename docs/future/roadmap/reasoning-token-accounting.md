@@ -1,6 +1,6 @@
 ---
 title: reasoning token accounting
-state: horizon
+state: evaluating
 created: 2026-08-16
 tags: [feature]
 subsystems: [backend]

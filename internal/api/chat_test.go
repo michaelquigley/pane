@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -171,5 +172,62 @@ func TestHandleChatStripsReasoningFieldsFromUpstreamRequest(t *testing.T) {
 	}
 	if !strings.Contains(body, "hello") || !strings.Contains(body, "hi") {
 		t.Fatalf("upstream request body lost the message history: %s", body)
+	}
+}
+
+func TestHandleChatAcceptsNullAssistantContentAfterToolCall(t *testing.T) {
+	var bodiesMu sync.Mutex
+	var upstreamBody string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("reading request body: %v", err)
+		}
+		bodiesMu.Lock()
+		upstreamBody = string(body)
+		bodiesMu.Unlock()
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"id\":\"chat-1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"continued\"}}]}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	api := &API{
+		cfg:       &config.Config{Model: "test-model"},
+		llm:       llm.NewClient(server.URL, "test-model", "", true),
+		mcp:       mcp.NewManager(nil),
+		approvals: NewApprovalRegistry(),
+	}
+
+	reqBody := `{"model":"","messages":[{"role":"user","content":"use the tool"},{"role":"assistant","content":null,"tool_calls":[{"id":"call-1","type":"function","function":{"name":"read_file","arguments":"{\\\"path\\\":\\\"README.md\\\"}"}}]},{"role":"tool","content":"file contents","tool_call_id":"call-1"},{"role":"user","content":"continue"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+
+	api.handleChat(recorder, req)
+
+	if recorder.Code == http.StatusBadRequest {
+		t.Fatalf("post-tool-turn request was rejected: %s", recorder.Body.String())
+	}
+
+	bodiesMu.Lock()
+	body := upstreamBody
+	bodiesMu.Unlock()
+	if body == "" {
+		t.Fatalf("upstream client received no request")
+	}
+
+	var forwarded llm.ChatRequest
+	if err := json.Unmarshal([]byte(body), &forwarded); err != nil {
+		t.Fatalf("decoding upstream request body: %v", err)
+	}
+	if len(forwarded.Messages) != 4 {
+		t.Fatalf("expected 4 forwarded messages, got %d", len(forwarded.Messages))
+	}
+	assistant := forwarded.Messages[1]
+	if assistant.Role != "assistant" || assistant.Content != nil || len(assistant.ToolCalls) != 1 {
+		t.Fatalf("assistant tool-call history was not preserved: %#v", assistant)
 	}
 }

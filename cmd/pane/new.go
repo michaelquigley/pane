@@ -27,6 +27,16 @@ system: "You are a helpful assistant."
 # listen address
 listen: 127.0.0.1:8400
 
+# context windows per model id, for the header's context meter.
+# models with no entry and no default show '?' in the meter.
+#context_windows:
+#  qwen2.5:14b: 32768
+#default_context_window: 128000
+
+# ask the upstream for token usage on every request (default true).
+# set false for an endpoint that rejects the stream_options field.
+#include_usage: false
+
 # MCP servers
 #mcp:
 #  # pane generates model-safe function names automatically.
