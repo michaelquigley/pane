@@ -1,0 +1,74 @@
+# the metawoo toolbar — work order
+
+spec: `metawoo-toolbar.md`. this arc is frontend and documentation only: no API, protocol, config, or backend change. no new npm dependencies — the glyphs are hand-rolled svg paths from Material Symbols (Apache-2.0) in the family's `icons.tsx` pattern — so the lockfile stays put and the npm-11 fixed point is undisturbed.
+
+## critical files
+
+| file | change |
+|---|---|
+| `ui/src/components/icons.tsx` | new — the `MaterialIcon` wrapper plus pane's six glyphs |
+| `ui/src/components/Toolbar.tsx` | new — the bar: cluster, model select, prompt glyph, badge, signal column |
+| `ui/src/components/SystemPromptEditor.tsx` | reworked in place — a toolbar-mount control (glyph on the bar; a modal holds the mode select and the custom text) |
+| `ui/src/App.tsx` | the `<header>` block is replaced by `<Toolbar>`; `app-layout` becomes a toolbar over an `app-body` row holding sidebar, main, and the tool panel |
+| `ui/src/index.css` | toolbar rules, modal rules, layout restructure, `--toolbar-height` and `--shadow` tokens; retired `.header*` and `.system-prompt-editor` / `-panel` / `-toggle` rules deleted; `.model-selector` restyled in place |
+| `docs/current/pane.md` | the UI bullets (model selector, context meter, tool panel, system prompt, conversation management) and the layout paragraph rewritten for the bar |
+| `AGENTS.md` | the package-structure component list gains `Toolbar.tsx` and `icons.tsx` (CLAUDE.md tracks it via the symlink) |
+| `CHANGELOG.md` | an Unreleased CHANGE entry |
+
+## stage 1 — the bar (frontend)
+
+1. **`icons.tsx` (new).** copy the family's `MaterialIcon` wrapper (viewBox `0 -960 960 960`, `fill: currentColor`, `aria-hidden="true"`) and define six exports at grade-500. the `add_box` path is already in the family archive (flo's toolbar) and the `description` path in flo's `icons.tsx`; source `forum`, `upload`, `psychology`, and `construction` from the Material Symbols set. if a first-choice glyph does not read right in the bar, the spec's alternates are the fallback, not an improvisation.
+
+2. **`Toolbar.tsx` (new).** a `header.toolbar` carrying a `nav.toolbar-nav` (aria-label "primary") in the family's three-column grid. the cluster, left to right:
+   - group 1 — the conversation: the new-conversation action (`add_box`, word "new conversation"), the conversations toggle (`forum`, lit and `aria-pressed` while the rail is open), the export action (`upload`, disabled without an exportable conversation)
+   - a `.toolbar-cluster-gap`
+   - group 2 — the reply: the model control — a `psychology` glyph beside the existing `ModelSelector` select, restyled compact — and `SystemPromptEditor`
+   - a `.toolbar-cluster-gap`
+   - group 3 — machinery: the tools toggle (`construction`, lit and `aria-pressed` while the panel is open) wearing the count badge while the tool count is above zero. its title and aria-label are dynamic — `tools (n)` while the count is positive, `tools` at zero — and the badge span is `aria-hidden`; an `aria-label` overrides descendant text, so a fixed label would silently take the count away from assistive tech the way the old `Tools (n)` text button exposed it.
+   - the signal column (grid-column 3, end-aligned): `ContextMeter`, unchanged
+
+   the component is presentation-only. props: `conversationsOpen`, `onToggleConversations`, `onNew`, `canExport`, `onExport`, the model control's inputs (`models`, `defaultModel`, `modelOverride`, `onModelChange`), the system-prompt quad (`mode`, `customValue`, `defaultValue`, `onModeChange`, `onCustomChange`), `toolsCount`, `toolsOpen`, `onToggleTools`, and the meter's four inputs (`usage`, `selectedModel`, `contextWindows`, `defaultContextWindow`). `modelOverride` is the stored preference — empty means follow the server default — and drives the select; `selectedModel` is the effective id App already computes (`modelOverride || config.default_model`) and drives the meter. they are two distinct values and one prop cannot feed both: the select needs empty to mean default, the meter needs the resolved id — a single `selectedModel` would break either the meter's `?` mismatch logic or the select's default entry. it calls the handlers App already owns; no new state except the modal's open/closed, which lives in `SystemPromptEditor`.
+
+3. **`SystemPromptEditor.tsx` (reworked).** a toolbar-mount control: the glyph (`description`) on the bar, lit on `custom` and `none` (non-default modes), its title and aria-label naming the current mode. the glyph opens a modal — a dimmed backdrop and a centered card (width `min(420px, 90vw)`, pane's paper ground, hairline border, `var(--shadow)`, `--radius`), z-index 30 above the tool panel — that holds the mode select and, for `custom`, the textarea; the existing `.system-prompt-mode` / `-textarea` / `-note` styles carry into the card. the card carries `role="dialog"` and `aria-modal="true"`, an accessible name (its heading), and a body that scrolls within the viewport when its content overflows. while open, focus starts in the card and wraps inside it; escape or an outside click closes the modal and returns focus to the glyph. the mode changes only inside the modal, so there is no auto-open: the glyph is the door and its lit state is the resting signal. the modal markup stays inside the component; a shared modal component is not earned until a second surface lands.
+
+4. **`App.tsx`.** delete the `<header className="header">` block (hamburger, inline `ModelSelector` / `ContextMeter` / `SystemPromptEditor` placement, export and tools buttons, spacer); render `<Toolbar>` at the top of `app-layout`; wrap `aside.sidebar`, `main`, and the tool panel in a new `div.app-body` flex row. the handlers, the preferences, and the chat hook are untouched — the toolbar receives what the header used to receive, split exactly as the header had it: the stored `modelOverride` to the model select, and the effective `selectedModel` to the meter. the tool panel moves from an `app-layout`-level `fixed` overlay into `app-body`, so its absolute edge resolves against the row below the bar.
+
+5. **`index.css`.**
+   - `:root` gains `--toolbar-height: 2.6rem` and a `--shadow` token — the modal is the first surface in the app that needs elevation, so the value lands as a token (with a dark-mode counterpart in the existing media block) rather than hardcoded into the modal rule; the dark block otherwise needs nothing, since every toolbar color resolves through pane's existing variables.
+   - the toolbar rules, adapted from the family (reef's `style.css` is the closest model): `.toolbar` (flex-shrink 0, z-index 20, `var(--bg)` ground, 1px `var(--border)` bottom border); `.toolbar-nav` (the three-column grid, `min(1150px, 100%)`, centered, `0.3rem 1.8rem` padding, `min-height` `var(--toolbar-height)`; the ≤720px media query drops the padding to `1rem`); `.toolbar-cluster` (grid-column 2, flex, wrap, `0.25rem 1.05rem` gap); `.toolbar-cluster-gap` (width 0.5rem); `.toolbar-link` (muted ink, hover and focus-visible to full ink; the lit toggles take `var(--accent)`); `.toolbar-glyph` with 18px svgs; `.toolbar-signals` (grid-column 3, end-aligned, inline-flex, 0.8rem gap).
+   - the badge: `.tool-badge` per the family's `.job-badge` (absolute, top -0.3rem, right -0.5rem, mono 0.52rem, `var(--accent)` ground, `var(--bg)` numeral, pill radius), rendered only while the count is above zero.
+   - the model select keeps its class: the global `.model-selector` declaration is restyled in place as a compact `.toolbar .model-selector` rule at the toolbar scale — 0.78rem control face, tight padding, 0.475rem radius, a small chevron, content-sized with a generous min-width. the modal's mode select keeps the carried-over `.system-prompt-mode` style. the select popups keep native styling, per the family's recorded decision.
+   - the modal: `.system-prompt-backdrop` (fixed inset 0, dimmed ground) and `.system-prompt-modal` (centered card, `min(420px, 90vw)`, `var(--bg)` ground, hairline border, `var(--shadow)`, `--radius`) at z-index 30 — the backdrop first in DOM order, the card above it — clear of the tool panel's 10.
+   - the layout: `.app-layout` becomes a column — the toolbar, then `flex: 1` body; `.app-body` is the `position: relative` flex row the sidebar, main, and tool panel now sit in, with `min-height: 0`; `.tool-panel` becomes `position: absolute; top: 0; right: 0; bottom: 0` inside it, so its top edge tracks the bar's rendered height — a wrapped, taller bar can never obscure the panel's head, the way a `fixed` offset against the `--toolbar-height` token (a floor, not a promise) could. the `.context-meter*` rules stand as-is.
+   - delete the retired rules: `.header`, `.header-btn`, `.header-spacer`, and the `.system-prompt-editor` / `-panel` / `-toggle` rules (the glyph and the modal replace them); the `-mode` / `-textarea` / `-note` styles carry over into the modal card. the `.model-selector` rule is not deleted — it is restyled per the rule above.
+
+6. **verify.** `cd ui && npm run lint && npm run build` (tsc + vite), then `make build` so the installed binary embeds the new dist. no go test is affected; `make test` stays green and is run for the record.
+
+## stage 2 — documentation, changelog, handoff
+
+1. **`docs/current/pane.md`.** rewrite the five UI bullets for the bar: the model selector is the toolbar's model control; the context meter is the bar's signal-column readout; the tool panel is opened from the tools glyph and appears below the bar; the system prompt is the bar's glyph (lit on non-default modes) that opens a modal holding the mode select and the custom text; conversation management gains the rail being opened from the toolbar. the layout paragraph names the bar — 2.6rem, the centered glyph cluster, the whitespace groups, the signal column — and the aesthetic direction notes the family chrome.
+2. **`AGENTS.md`.** the package-structure component list gains `Toolbar.tsx` and `icons.tsx`; the `SystemPromptEditor.tsx` line reads toolbar-mount with modal.
+3. **`CHANGELOG.md`.** an Unreleased CHANGE entry: the header is replaced by the family's toolbar — a 2.6rem bar over the rail and chat, the controls as a centered glyph cluster (new conversation, conversations, export, model, system prompt, tools with its count badge), the context meter as the bar's right-hand signal, and the system prompt in a modal opened from the bar.
+4. **journal.** a `docs/journal/` entry recording the stage gates, the review rounds, and the manual-pass checklist handed to michael.
+5. **the manual pass, for michael** — the same browser-only items as prior arcs:
+   - the bar's geometry: 2.6rem, spanning rail and chat, the cluster centered, the hairline below; dark mode reads the same. on a wide window with the rail open, the cluster centers on the window — if it reads off, that is a placement-loop nudge (a narrower cap), not a re-plan.
+   - the conversations glyph lights in the accent with the rail open and unlights on close; the rail drops below the bar.
+   - the tools glyph's badge shows the count, hides at zero, and the panel appears below the bar; lit while open.
+   - the model select persists its override; the meter keeps its bands and `?` states in the signal column.
+   - the system prompt: the glyph opens the modal holding the mode select and, for `custom`, the textarea; escape and outside click both close it, returning focus to the glyph; the glyph lights on non-default modes and agrees with the modal's mode after each change.
+   - export is inert (muted, no hover) with no exportable conversation and downloads with one.
+   - a narrow window: the cluster wraps without colliding with the signal column, and the rail and tool panel follow the bar's rendered height — the wrapped bar never obscures the panel's top edge.
+   - keyboard: every control reachable in visual order, focus-visible rings, the modal traps focus and closes on escape.
+6. **terminus.** the stage 1 diff goes to clean before michael's hands-on pass; stage 2 (docs, changelog) takes ad-hoc review as on prior arcs. any presentation move michael makes in the pass — a glyph swap from the spec's alternates, a width or gap nudge — is built and re-gated, per the placement loop.
+
+## invariants
+
+1. **the toolbar is presentation-only** — it renders app state and calls app handlers; no conversation or preference state moves into the toolbar or into new localStorage keys. the modal's open/closed is the only new local state.
+2. **no backend change** — no API, protocol, config, or go test change. the arc touches `ui/src` and docs only.
+3. **no new dependencies** — glyphs are hand-rolled svg (Material Symbols paths, Apache-2.0) in the family's wrapper pattern; the font stack is untouched; the lockfile is untouched.
+4. **family grammar, pane's paint** — the bar adopts the family's geometry and glyph grammar on pane's existing tokens; no family token names enter the stylesheet. the scope limit is against *unrelated* reskins, not a ban on every touched file: chrome the arc does not touch — the chat view, message and tool-call rendering, the input area, and the rail's contents — is restyled by no rule this arc adds. the components the work order explicitly moves (the toolbar-mounted `ModelSelector` and `SystemPromptEditor`, the prompt modal, and the `.app-layout` / `.app-body` / `.tool-panel` geometry) are whitelisted: their changes are the arc, not a violation of this invariant.
+5. **the modal is the prompt's only overflow home** — no second toolbar row; the glyph is the only door; escape and outside click close it, focus is trapped while open, and focus returns to the glyph.
+6. **the state vocabulary is unchanged** — the meter's bands and `?`, the disabled export, the badge's count. nothing the bar says was not already said in the header; the warm-tint and signal extensions stay deferred per the spec.
+7. **accessibility** — aria-label and title on every glyph control, the tools glyph's label dynamic with its count while positive (`tools (n)`) and the badge aria-hidden; `aria-pressed` on the two toggles; the modal carries `role="dialog"`, `aria-modal="true"`, an accessible name, and a viewport-bounded scrolling body; focus-visible on every control; the modal traps focus and closes on escape; tab order follows visual order.
+8. **dark mode holds** — the bar renders correctly under pane's existing dark block; no light-only assumption anywhere in the new rules.
+9. **the furniture around the bar is untouched** — the rail's contents, the chat view, the input area, and the tool panel's contents are behaviorally unchanged; only their container geometry moves.
