@@ -13,6 +13,7 @@ export function ModelSelector({ models, defaultModel, selected, onChange }: Prop
   return (
     <select
       className="model-selector"
+      aria-label="model"
       value={selected}
       onChange={e => onChange(e.target.value)}
     >

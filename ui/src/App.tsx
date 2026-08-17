@@ -7,9 +7,7 @@ import { useTools } from './hooks/useTools'
 import { useChat } from './hooks/useChat'
 import { ChatView } from './components/ChatView'
 import { ConversationList } from './components/ConversationList'
-import { ModelSelector } from './components/ModelSelector'
-import { ContextMeter } from './components/ContextMeter'
-import { SystemPromptEditor } from './components/SystemPromptEditor'
+import { Toolbar } from './components/Toolbar'
 import { ToolPanel } from './components/ToolPanel'
 import {
   buildConversationMarkdownFilename,
@@ -198,79 +196,69 @@ export default function App() {
 
   return (
     <div className="app-layout">
-      {sidebarOpen && (
-        <aside className="sidebar">
-          <ConversationList
-            conversations={conversations}
-            activeId={activeId}
-            onSelect={handleSelectConversation}
-            onNew={handleNewConversation}
-            onDelete={handleDeleteConversation}
-            onClearAll={handleClearAllData}
-          />
-        </aside>
-      )}
+      <Toolbar
+        conversationsOpen={sidebarOpen}
+        onToggleConversations={() => setSidebarOpen(!sidebarOpen)}
+        onNew={handleNewConversation}
+        canExport={canExportActiveConversation}
+        onExport={handleExportConversation}
+        models={models}
+        defaultModel={config.default_model}
+        modelOverride={preferences.modelOverride || ''}
+        onModelChange={handleModelChange}
+        mode={preferences.systemPromptMode}
+        customValue={preferences.systemPromptCustom}
+        defaultValue={config.default_system}
+        onModeChange={handleSystemPromptModeChange}
+        onCustomChange={handleSystemPromptCustomChange}
+        toolsCount={tools.length}
+        toolsOpen={toolPanelOpen}
+        onToggleTools={() => setToolPanelOpen(!toolPanelOpen)}
+        usage={chat.usageRecord}
+        selectedModel={selectedModel}
+        contextWindows={config.context_windows}
+        defaultContextWindow={config.default_context_window}
+      />
 
-      <main className="main">
-        <header className="header">
-          <button className="header-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
-            &#9776;
-          </button>
-          <ModelSelector
-            models={models}
-            defaultModel={config.default_model}
-            selected={preferences.modelOverride || ''}
-            onChange={handleModelChange}
-          />
-          <ContextMeter
-            usage={chat.usageRecord}
-            selectedModel={selectedModel}
-            contextWindows={config.context_windows}
-            defaultContextWindow={config.default_context_window}
-          />
-          <SystemPromptEditor
-            mode={preferences.systemPromptMode}
-            customValue={preferences.systemPromptCustom}
-            defaultValue={config.default_system}
-            onModeChange={handleSystemPromptModeChange}
-            onCustomChange={handleSystemPromptCustomChange}
-          />
-          <div className="header-spacer" />
-          <button
-            className="header-btn"
-            onClick={handleExportConversation}
-            disabled={!canExportActiveConversation}
-          >
-            Export
-          </button>
-          <button className="header-btn" onClick={() => setToolPanelOpen(!toolPanelOpen)}>
-            Tools{tools.length > 0 && ` (${tools.length})`}
-          </button>
-        </header>
+      <div className="app-body">
+        {sidebarOpen && (
+          <aside className="sidebar">
+            <ConversationList
+              conversations={conversations}
+              activeId={activeId}
+              onSelect={handleSelectConversation}
+              onNew={handleNewConversation}
+              onDelete={handleDeleteConversation}
+              onClearAll={handleClearAllData}
+            />
+          </aside>
+        )}
 
-        <ChatView
-          messages={chat.messages}
-          isStreaming={chat.isStreaming}
-          streamingContent={chat.streamingContent}
-          streamingThinking={chat.streamingThinking}
-          activeToolCalls={chat.activeToolCalls}
-          error={chat.error}
-          onSend={handleSend}
-          onRetry={chat.retryLastRequest}
-          onApprove={chat.approveToolCall}
-          onDeny={chat.denyToolCall}
-          onAbort={chat.abort}
-          onToggleThinkingCollapsed={chat.setThinkingCollapsed}
-        />
-      </main>
+        <main className="main">
+          <ChatView
+            messages={chat.messages}
+            isStreaming={chat.isStreaming}
+            streamingContent={chat.streamingContent}
+            streamingThinking={chat.streamingThinking}
+            activeToolCalls={chat.activeToolCalls}
+            error={chat.error}
+            onSend={handleSend}
+            onRetry={chat.retryLastRequest}
+            onApprove={chat.approveToolCall}
+            onDeny={chat.denyToolCall}
+            onAbort={chat.abort}
+            onToggleThinkingCollapsed={chat.setThinkingCollapsed}
+          />
+        </main>
 
-      {toolPanelOpen && (
-        <ToolPanel
-          tools={tools}
-          servers={servers}
-          onClose={() => setToolPanelOpen(false)}
-        />
-      )}
+        {toolPanelOpen && (
+          <ToolPanel
+            tools={tools}
+            servers={servers}
+            onClose={() => setToolPanelOpen(false)}
+          />
+        )}
+      </div>
     </div>
   )
 }

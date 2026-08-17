@@ -21,6 +21,8 @@
   --chat-width: 960px;
   --radius: 6px;
   --transition: 150ms ease;
+  --toolbar-height: 2.6rem;
+  --shadow: 0 20px 50px rgba(45, 42, 38, 0.14);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -35,6 +37,7 @@
     --accent-hover: #e0a44d;
     --error: #d46d4d;
     --success: #5dac60;
+    --shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
   }
 }
 
@@ -58,11 +61,21 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Layout */
+/* Layout: the toolbar over an app-body row holding the rail, the chat, and
+   the tool panel. the body anchors below the bar's rendered height, so a
+   wrapped, taller bar can never obscure the rail or the panel's head. */
 .app-layout {
   display: flex;
+  flex-direction: column;
   height: 100vh;
   overflow: hidden;
+}
+
+.app-body {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
 .sidebar {
@@ -82,54 +95,142 @@ body {
   overflow: hidden;
 }
 
-/* Header */
-.header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--border);
-  min-height: 64px;
-}
+/* Toolbar: the family's standing chrome — a quiet bar over the rail and the
+   chat. the glyph cluster centers on the window, groups set off by
+   whitespace only, and the signal column sits at the right. */
 
-.header-btn {
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--fg);
-  padding: 4px 10px;
-  border-radius: var(--radius);
-  cursor: pointer;
-  font-family: var(--serif);
-  font-size: 0.875rem;
-  transition: background var(--transition);
-}
-
-.header-btn:hover {
-  background: var(--bg-muted);
-}
-
-.header-btn:disabled {
-  color: var(--fg-muted);
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.header-btn:disabled:hover {
-  background: none;
-}
-
-.header-spacer {
-  flex: 1;
-}
-
-.model-selector {
+.toolbar {
+  flex-shrink: 0;
+  z-index: 20;
   background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar-nav {
+  display: grid;
+  /* the signals column is floored at its content width so the meter can
+     never overflow leftward into the centered cluster; when space runs
+     short the cluster wraps instead of colliding */
+  grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+  align-items: center;
+  width: min(1150px, 100%);
+  min-height: var(--toolbar-height);
+  margin: 0 auto;
+  padding: 0.3rem 1.8rem;
+}
+
+.toolbar-cluster {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem 1.05rem;
+}
+
+/* whitespace-only break between toolbar groups: no drawn rule */
+.toolbar-cluster-gap {
+  width: 0.5rem;
+}
+
+/* the glyph controls read as 18px marks in muted ink; the word travels in
+   the title and aria-label. hover and focus take full ink, the lit toggles
+   (conversations, tools) sit in the accent while their surface is open, and
+   a disabled control stays muted with no hover. */
+.toolbar-link {
+  display: inline-flex;
+  align-items: center;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.toolbar-link:hover:not(:disabled),
+.toolbar-link:focus-visible:not(:disabled) {
+  color: var(--fg);
+}
+
+.toolbar-link.lit {
+  color: var(--accent);
+}
+
+.toolbar-glyph svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* the tools glyph wears its count as a small filled bubble, a data-graphic
+   signal rather than chrome. the badge is aria-hidden; the count rides the
+   glyph's label. it is a machine number, so it is set in the mono. */
+.toolbar-tools {
+  position: relative;
+}
+
+.tool-badge {
+  position: absolute;
+  top: -0.3rem;
+  right: -0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0.95rem;
+  height: 0.95rem;
+  padding: 0 0.22rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg);
+  font-family: var(--mono);
+  font-size: 0.52rem;
+  line-height: 1;
+}
+
+.toolbar-signals {
+  grid-column: 3;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+/* the model control: the existing select, compact at the toolbar scale
+   beside its glyph. the chevron is drawn with the family's two-gradient
+   pattern; the popup keeps its native styling, per the family's recorded
+   decision. */
+.toolbar-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.toolbar .model-selector {
+  appearance: none;
+  background: var(--bg);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--fg-muted) 50%),
+    linear-gradient(135deg, var(--fg-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) 50%,
+    calc(100% - 11px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px, 4px 4px;
   color: var(--fg);
   border: 1px solid var(--border);
-  padding: 4px 8px;
-  border-radius: var(--radius);
+  padding: 0.14rem 1.5rem 0.14rem 0.5rem;
+  border-radius: 0.475rem;
   font-family: var(--serif);
-  font-size: 0.875rem;
+  font-size: 0.78rem;
+  min-width: 9rem;
+}
+
+/* focus-visible rings for the bar's controls and the modal's form fields */
+.toolbar-link:focus-visible,
+.toolbar .model-selector:focus-visible,
+.system-prompt-modal select:focus-visible,
+.system-prompt-modal textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .context-meter {
@@ -154,31 +255,47 @@ body {
   color: var(--error);
 }
 
-/* System prompt */
-.system-prompt-editor {
+/* System prompt: the bar's glyph is the only door to the surface; the mode
+   select and the custom text live in a modal it opens. the modal sits above
+   the tool panel (10) and the bar (20) — the backdrop first in DOM order,
+   the card above it — and its body scrolls within the viewport when the
+   content overflows. */
+.system-prompt-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.system-prompt-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 30;
   display: flex;
   flex-direction: column;
+  width: min(640px, 92vw);
+  max-height: 90vh;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
 }
 
-.system-prompt-panel {
+.system-prompt-modal-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 4px;
+  gap: 12px;
+  min-height: 0;
+  padding: 24px;
+  overflow-y: auto;
 }
 
-.system-prompt-toggle {
-  background: none;
-  border: none;
-  color: var(--fg-muted);
-  cursor: pointer;
-  font-family: var(--serif);
-  font-size: 0.8125rem;
-  padding: 4px 6px;
-}
-
-.system-prompt-toggle:hover {
-  color: var(--fg);
+.system-prompt-modal-body h3 {
+  font-size: 1rem;
+  font-weight: 600;
 }
 
 .system-prompt-mode,
@@ -195,6 +312,7 @@ body {
 
 .system-prompt-textarea {
   resize: vertical;
+  min-height: 240px;
 }
 
 .system-prompt-note {
@@ -205,7 +323,6 @@ body {
   font-size: 0.8125rem;
   line-height: 1.5;
   padding: 8px;
-  max-width: 360px;
   white-space: pre-wrap;
 }
 
@@ -898,10 +1015,12 @@ body {
 }
 
 /* Tool panel */
+/* the panel is absolute inside the app-body row, so its top edge tracks the
+   bar's rendered height — a wrapped, taller bar can never obscure its head */
 .tool-panel {
-  position: fixed;
-  right: 0;
+  position: absolute;
   top: 0;
+  right: 0;
   bottom: 0;
   width: 320px;
   background: var(--bg-sidebar);
@@ -1003,4 +1122,12 @@ body {
   color: var(--fg-muted);
   font-style: italic;
   font-size: 0.875rem;
+}
+
+/* ---- responsive ---- */
+
+@media (max-width: 720px) {
+  .toolbar-nav {
+    padding: 0.3rem 1rem;
+  }
 }
