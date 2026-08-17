@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import type { Message, ActiveToolCall, SSEEvent, ToolCallResult, SystemPromptMode } from '../types'
+import type { Message, ActiveToolCall, Conversation, SSEEvent, ToolCallResult, SystemPromptMode, UsageRecord } from '../types'
 import { createSSEParser } from '../lib/sse'
 
 interface SendMessageOptions {
@@ -25,6 +25,7 @@ export function useChat() {
   const [streamingThinking, setStreamingThinking] = useState('')
   const [activeToolCalls, setActiveToolCalls] = useState<Map<number, ActiveToolCall>>(new Map())
   const [error, setError] = useState<string | null>(null)
+  const [usageRecord, setUsageRecord] = useState<UsageRecord | null>(null)
   const activeRequestRef = useRef<ActiveRequest | null>(null)
   const nextRequestIdRef = useRef(0)
   const lastRequestRef = useRef<RequestSnapshot | null>(null)
@@ -66,6 +67,7 @@ export function useChat() {
     setStreamingThinking('')
     setActiveToolCalls(new Map())
     setError(null)
+    setUsageRecord(null)
 
     // display-only: thinking is never returned to the model
     const wireMessages = requestMessages.map(({ thinking, thinkingCollapsed, ...wireMessage }) => wireMessage)
@@ -159,6 +161,17 @@ export function useChat() {
               tc.durationMs = event.duration_ms
               tc.errorCode = event.error_code
               setActiveToolCalls(new Map(toolCallsAccum))
+              break
+            }
+
+            case 'usage': {
+              setUsageRecord({
+                promptTokens: event.prompt_tokens,
+                completionTokens: event.completion_tokens,
+                totalTokens: event.total_tokens,
+                model: options.model,
+                at: Date.now(),
+              })
               break
             }
 
@@ -262,10 +275,18 @@ export function useChat() {
     lastRequestRef.current = null
     setIsStreaming(false)
     setError(null)
+    setUsageRecord(null)
     setStreamingContent('')
     setStreamingThinking('')
     setActiveToolCalls(new Map())
     setMessagesState(value)
+  }, [])
+
+  const loadConversation = useCallback((conversation: Conversation | null) => {
+    lastRequestRef.current = null
+    setError(null)
+    setMessagesState(conversation?.messages ?? [])
+    setUsageRecord(conversation?.usage ?? null)
   }, [])
 
   const setThinkingCollapsed = useCallback((messageIndex: number, collapsed: boolean) => {
@@ -310,6 +331,8 @@ export function useChat() {
   return {
     messages,
     setMessages,
+    loadConversation,
+    usageRecord,
     isStreaming,
     streamingContent,
     streamingThinking,

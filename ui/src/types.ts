@@ -4,6 +4,15 @@ export interface Conversation {
   messages: Message[]
   createdAt: number
   updatedAt: number
+  usage?: UsageRecord | null
+}
+
+export interface UsageRecord {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  model: string
+  at: number
 }
 
 export interface Message {
@@ -56,6 +65,8 @@ export interface ConfigResponse {
   default_model: string
   default_system: string
   mcp_separator: string
+  context_windows: Record<string, number>
+  default_context_window: number
 }
 
 export interface ChatPreferences {
@@ -72,6 +83,7 @@ export type SSEEvent =
   | { type: 'tool_call_executing'; index: number; id: string; name: string }
   | { type: 'tool_call_approve'; index: number; id: string; name: string; arguments: string }
   | { type: 'tool_call_result'; index: number; id: string; name: string; status: 'complete' | 'error'; error_code?: ToolCallErrorCode; content: string; duration_ms: number }
+  | { type: 'usage'; prompt_tokens: number; completion_tokens: number; total_tokens: number }
   | { type: 'round_complete'; assistant: Message; tool_messages: Message[] }
   | { type: 'error'; code: string; message: string; tool_call_id?: string }
   | { type: 'done' }

@@ -8,6 +8,7 @@ import { useChat } from './hooks/useChat'
 import { ChatView } from './components/ChatView'
 import { ConversationList } from './components/ConversationList'
 import { ModelSelector } from './components/ModelSelector'
+import { ContextMeter } from './components/ContextMeter'
 import { SystemPromptEditor } from './components/SystemPromptEditor'
 import { ToolPanel } from './components/ToolPanel'
 import {
@@ -48,6 +49,7 @@ export default function App() {
   }, [setPreferences])
 
   const activeConversation = conversations.find(c => c.id === activeId)
+  const selectedModel = preferences.modelOverride || config.default_model
   const canExportActiveConversation = activeConversation
     ? hasExportableMessages({ ...activeConversation, messages: chat.messages })
     : false
@@ -62,7 +64,7 @@ export default function App() {
 
     chatOwnerIdRef.current = activeId
     if (activeConversation) {
-      chat.setMessages(activeConversation.messages)
+      chat.loadConversation(activeConversation)
     } else {
       chat.setMessages([])
     }
@@ -75,9 +77,15 @@ export default function App() {
     setConversations(prev => prev.map(c => {
       if (c.id !== activeId) return c
       const title = c.title || extractTitle(chat.messages)
-      return { ...c, messages: chat.messages, title, updatedAt: Date.now() }
+      return {
+        ...c,
+        messages: chat.messages,
+        usage: chat.usageRecord,
+        title,
+        updatedAt: Date.now(),
+      }
     }))
-  }, [chat.messages]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chat.messages, chat.usageRecord]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleNewConversation = useCallback(() => {
     chat.abort()
@@ -159,11 +167,11 @@ export default function App() {
       chatOwnerIdRef.current = id
     }
     chat.sendMessage(content, {
-      model: preferences.modelOverride || '',
+      model: selectedModel,
       systemPromptMode: preferences.systemPromptMode,
       systemPrompt: preferences.systemPromptCustom,
     })
-  }, [activeId, preferences, chat, setConversations, setActiveId])
+  }, [activeId, preferences, selectedModel, chat, setConversations, setActiveId])
 
   const handleClearAllData = useCallback(() => {
     if (confirm('Delete all conversations, preferences, and data?')) {
@@ -213,6 +221,12 @@ export default function App() {
             defaultModel={config.default_model}
             selected={preferences.modelOverride || ''}
             onChange={handleModelChange}
+          />
+          <ContextMeter
+            usage={chat.usageRecord}
+            selectedModel={selectedModel}
+            contextWindows={config.context_windows}
+            defaultContextWindow={config.default_context_window}
           />
           <SystemPromptEditor
             mode={preferences.systemPromptMode}

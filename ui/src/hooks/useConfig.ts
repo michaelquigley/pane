@@ -5,6 +5,8 @@ const emptyConfig: ConfigResponse = {
   default_model: '',
   default_system: '',
   mcp_separator: '_',
+  context_windows: {},
+  default_context_window: 0,
 }
 
 export function useConfig() {
@@ -19,6 +21,8 @@ export function useConfig() {
           default_model: data.default_model || '',
           default_system: data.default_system || '',
           mcp_separator: data.mcp_separator || '_',
+          context_windows: data.context_windows || {},
+          default_context_window: data.default_context_window || 0,
         })
       })
       .catch(() => setConfig(emptyConfig))

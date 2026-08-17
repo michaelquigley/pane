@@ -132,6 +132,28 @@ body {
   font-size: 0.875rem;
 }
 
+.context-meter {
+  min-width: 4ch;
+  color: var(--fg-muted);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.context-meter-cool {
+  color: var(--success);
+}
+
+.context-meter-warm {
+  color: var(--accent);
+}
+
+.context-meter-hot {
+  color: var(--error);
+}
+
 /* System prompt */
 .system-prompt-editor {
   display: flex;
