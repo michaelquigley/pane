@@ -69,6 +69,7 @@ pane/
 │           ├── MarkdownCodeBlock.tsx # syntax-highlighted code blocks
 │           ├── ToolCallBlock.tsx # inline tool call with status, approval, args/result
 │           ├── ModelSelector.tsx
+│           ├── ContextMeter.tsx # header context-window usage readout
 │           ├── ToolPanel.tsx   # slide-out tool list with server statuses
 │           ├── ConversationList.tsx
 │           └── SystemPromptEditor.tsx
@@ -101,7 +102,7 @@ pane/
 | endpoint | method | description |
 |---|---|---|
 | `/api/health` | GET | health check |
-| `/api/config` | GET | server config (system prompt, default model) |
+| `/api/config` | GET | server config (system prompt, model, context windows) |
 | `/api/models` | GET | proxy to LLM endpoint's /v1/models |
 | `/api/chat` | POST | chat completion with MCP tool loop, returns SSE stream |
 | `/api/tools` | GET | discovered MCP tools with server statuses |
@@ -109,7 +110,7 @@ pane/
 
 ## SSE streaming protocol
 
-the backend emits typed SSE events: `delta`, `thinking_delta`, `tool_call_start`, `tool_call_args`, `tool_call_executing`, `tool_call_approve`, `tool_call_result`, `round_complete`, `error`, `done`. the event data types live in `internal/sse/writer.go`; the frontend state machine that consumes them is in `ui/src/hooks/useChat.ts`. `docs/current/pane.md` documents the full protocol and event lifecycle.
+the backend emits typed SSE events: `delta`, `thinking_delta`, `tool_call_start`, `tool_call_args`, `tool_call_executing`, `tool_call_approve`, `tool_call_result`, `usage`, `round_complete`, `error`, `done`. the event data types live in `internal/sse/writer.go`; the frontend state machine that consumes them is in `ui/src/hooks/useChat.ts`. `docs/current/pane.md` documents the full protocol and event lifecycle.
 
 ## configuration
 

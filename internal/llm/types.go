@@ -18,7 +18,7 @@ type StreamOptions struct {
 // Message is an OpenAI-compatible chat message.
 type Message struct {
 	Role       string     `json:"role"`
-	Content    *string    `json:"content"`
+	Content    *string    `json:"content" dd:",+nullable"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 }

@@ -86,7 +86,7 @@ minimal surface:
 |---|---|---|
 | `/` | GET | serve embedded frontend |
 | `/api/health` | GET | health check, returns `{"status": "ok"}` |
-| `/api/config` | GET | server defaults for the UI: `default_model`, `default_system`, `mcp_separator` |
+| `/api/config` | GET | server defaults for the UI: system prompt, model, separator, and context windows |
 | `/api/chat` | POST | chat completion proxy with MCP tool loop. accepts OpenAI-format messages array. returns SSE stream. |
 | `/api/models` | GET | proxy to llm-gateway's `/v1/models` |
 | `/api/tools` | GET | return discovered MCP tools and server statuses (for frontend display) |
@@ -118,6 +118,24 @@ request body — the frontend sends the full conversation history every time. th
 the `messages` array uses standard OpenAI chat format, including any tool call/result pairs from prior turns. the system prompt is resolved server-side from `system_prompt_mode`: `default` uses the configured system prompt, `custom` uses the request's `system_prompt`, and `none` sends no system message at all.
 
 response — SSE stream. `Content-Type: text/event-stream`.
+
+#### `GET /api/config`
+
+returns the server-side defaults and context-window facts the UI needs:
+
+```json
+{
+  "default_system": "You are a helpful assistant.",
+  "default_model": "qwen2.5:14b",
+  "mcp_separator": "_",
+  "context_windows": {
+    "qwen2.5:14b": 32768
+  },
+  "default_context_window": 128000
+}
+```
+
+`context_windows` and `default_context_window` are omitted when they are not configured. `include_usage` is deliberately absent: it is a backend-side request knob that controls the upstream wire contract, not a frontend setting.
 
 #### `GET /api/models`
 
@@ -185,6 +203,9 @@ data: {"index": 0, "id": "tc_1", "name": "baabhive_hive_sql_3f9c2ab1d4"}
 event: tool_call_args
 data: {"index": 0, "id": "tc_1", "arguments_partial": "{\"sql\": \"SELECT tag, COUNT(*) ..."}
 
+event: usage
+data: {"prompt_tokens": 41230, "completion_tokens": 512, "total_tokens": 41742}
+
 event: tool_call_executing
 data: {"index": 0, "id": "tc_1", "name": "baabhive_hive_sql_3f9c2ab1d4"}
 
@@ -204,6 +225,8 @@ data: {}
 `round_complete` fires after each tool round, carrying the assistant message (with its tool calls) and the tool result messages — the frontend appends these to the conversation so the history it sends next turn matches what the model actually saw.
 
 `thinking_delta` is the model's reasoning, streamed one token at a time and interleaved with `delta` and the tool-call events in upstream order. it is display-only by construction: the backend `llm.Message` type carries no reasoning field, so reasoning is never accumulated, never echoed in the `round_complete` payload, and never re-sent to the model. the upstream stream reader tolerates both known reasoning field spellings — `reasoning` (openai o-style) and `reasoning_content` (the vllm / sglang family) — and emits a single pane field regardless of which one appears on the wire.
+
+`usage` carries the upstream's `prompt_tokens`, `completion_tokens`, and `total_tokens` scalars unchanged. it fires once per round when the upstream reports usage, after that round's content and tool-call stream events and before `round_complete`. it is absent when `include_usage` is off or when the upstream declines to report usage; either case leaves the turn otherwise unchanged.
 
 for servers with `approve: true`, an approval gate is inserted before `tool_call_executing`:
 
@@ -253,18 +276,18 @@ data: {"code": "upstream_unreachable", "message": "connection refused"}
 flowchart TD
     a["1. user sends POST /api/chat"] --> b["2. backend opens the SSE stream"]
     b --> c["3. backend submits to llm-gateway with stream=true"]
-    c --> d["4. llm-gateway streams tokens: delta and thinking_delta events"]
-    d --> e{"the stream carries tool_calls?"}
-    e -- "no" --> h["8. llm-gateway signals completion: done, SSE stream closes"]
-    e -- "yes" --> f["5. tool_call_start, then tool_call_args as argument tokens arrive"]
-    f --> g{"server has approve: true?"}
+    c --> d["4. llm-gateway streams delta, thinking_delta, and tool-call events"]
+    d --> u["5. usage after the round's stream, when reported"]
+    u --> e{"the stream carries tool_calls?"}
+    e -- "no" --> h["9. llm-gateway signals completion: done, SSE stream closes"]
+    e -- "yes" --> g{"server has approve: true?"}
     g -- "yes" --> i["6. tool_call_approve: wait on POST /api/tools/approve (5-minute timeout)"]
-    g -- "no" --> j["6. tool_call_executing: dispatch to the MCP server via stdio"]
+    g -- "no" --> j["7. tool_call_executing: dispatch to the MCP server via stdio"]
     i -- "approved" --> j
     i -- "denied or timed out" --> k["inject the failure as the tool result"]
-    j --> l["6. tool_call_result with status and duration"]
+    j --> l["7. tool_call_result with status and duration"]
     k --> l
-    l --> m["7. round_complete with the assistant and tool messages; resubmit with results appended"]
+    l --> m["8. round_complete with the assistant and tool messages; resubmit with results appended"]
     m --> d
 ```
 
@@ -321,6 +344,7 @@ ui/
         ├── MarkdownCodeBlock.tsx
         ├── ToolCallBlock.tsx
         ├── ModelSelector.tsx
+        ├── ContextMeter.tsx
         ├── ToolPanel.tsx
         ├── ConversationList.tsx
         └── SystemPromptEditor.tsx
@@ -337,6 +361,15 @@ interface Conversation {
   messages: Message[];
   createdAt: number;
   updatedAt: number;
+  usage?: UsageRecord | null;
+}
+
+interface UsageRecord {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  model: string;
+  at: number;              // epoch milliseconds
 }
 
 interface Message {
@@ -349,6 +382,14 @@ interface Message {
   thinkingCollapsed?: boolean;                        // per-block collapse state (undefined = expanded)
 }
 
+interface ConfigResponse {
+  default_model: string;
+  default_system: string;
+  mcp_separator: string;
+  context_windows: Record<string, number>;
+  default_context_window: number;
+}
+
 type SSEEvent =
   | { type: 'delta'; content: string }
   | { type: 'thinking_delta'; content: string }
@@ -357,6 +398,7 @@ type SSEEvent =
   | { type: 'tool_call_approve'; index: number; id: string; name: string; arguments: string }
   | { type: 'tool_call_executing'; index: number; id: string; name: string }
   | { type: 'tool_call_result'; index: number; id: string; name: string; status: string; error_code?: string; content: string; duration_ms: number }
+  | { type: 'usage'; prompt_tokens: number; completion_tokens: number; total_tokens: number }
   | { type: 'round_complete'; assistant: Message; tool_messages: Message[] }
   | { type: 'error'; code: string; message: string; tool_call_id?: string }
   | { type: 'done' };
@@ -378,6 +420,7 @@ the `useChat` hook manages the streaming lifecycle. the chat POST returns an SSE
    - `tool_call_approve` → flip the ToolCallBlock to `awaiting_approval`, show approve/deny buttons
    - `tool_call_executing` → flip the ToolCallBlock to `executing` state
    - `tool_call_result` → flip the ToolCallBlock to `complete` or `error`, show the result (collapsible)
+   - `usage` → replace the conversation's usage record with the round's token counts, stamped with the selected model and current time
    - `round_complete` → commit the assistant and tool messages to the conversation history, grafting the round's accumulated thinking onto the committed assistant message
    - `error` → show an inline error (tool-level) or a stream-level error
    - `done` → finalize the assistant message
@@ -387,11 +430,14 @@ tool call block states: `loading` → `args_streaming` → [`awaiting_approval` 
 
 thinking is display-only, end to end. the frontend owns its life from stream to commit to storage: `thinking_delta` accumulates per round, the committed assistant message carries the round's `thinking` (and its per-block `thinkingCollapsed` state), and both persist in the conversation's localStorage entry — a reload returns the conversation exactly as the reader left it, collapsed blocks included. when the hook builds the `/api/chat` request body, it strips `thinking` and `thinkingCollapsed` from every message, so reasoning never reaches the backend; the backend's `llm.Message` type carries no reasoning field, so nothing reaches the model either. a response with no thinking tokens renders exactly as it did before — no block, no placeholder. accepted residual: thinking text is stored in localStorage with no cap, so a conversation with a thinking-heavy model grows accordingly; revisit when a conversation approaches the storage quota in real use.
 
+the usage record rides on the conversation object and is seeded into hook state when that conversation loads. starting or retrying a request and any history replacement through the chat hook — clear, delete, or abort — resets the live record; a conversation switch replaces it with the destination conversation's seed. a model switch leaves the stored record keyed to the model that produced it, so the mismatch honestly displays `?`. each arriving `usage` event replaces the record, so the last round wins. storage remains an implementation detail of the conversation rather than something the meter reads directly.
+
 the UI:
 
 - **chat view.** messages rendered as markdown (with syntax-highlighted code blocks). streaming token display with a visible cursor/caret. assistant messages that carry thinking render a quiet thinking block above their content — live and always expanded while the turn streams, resting expanded at turn end, collapsible by the reader with the collapsed state persisting per message.
 - **tool call visibility.** when the LLM invokes a tool, show it inline — the tool name, arguments (collapsible), and result (collapsible). not hidden, not modal — part of the conversation flow. think Claude Desktop's tool use blocks. each round's thinking block sits above the tool calls that round motivated, so the reader sees the model reason its way into a call.
 - **model selector.** dropdown populated from `/api/models`. persisted in localStorage.
+- **context meter.** compact percentage in the header beside the model selector. it compares the latest `prompt_tokens` measurement with the selected model's exact configured window, then shifts from cool below 50%, to warm from 50–80%, to hot at 80% and above. `?` names the distinct unknown state in its tooltip: no usage yet, a measurement from another model, or no configured window for the measured model.
 - **tool panel.** slide-out sidebar showing discovered MCP tools and server statuses.
 - **system prompt.** editable, with default/custom/none modes, persisted in localStorage.
 - **conversation management.** new chat, history list (localStorage), delete, markdown export.
@@ -431,6 +477,16 @@ system: "You are a helpful assistant."
 
 # listen address
 listen: 127.0.0.1:8400
+
+# context windows per model id, for the header's context meter.
+# models with no entry and no default show '?' in the meter.
+#context_windows:
+#  qwen2.5:14b: 32768
+#default_context_window: 128000
+
+# ask the upstream for token usage on every request (default true).
+# set false for an endpoint that rejects the stream_options field.
+#include_usage: false
 
 # MCP servers — same conceptual model as Claude Desktop
 mcp:
