@@ -343,6 +343,8 @@ ui/
         ├── MessageBubble.tsx
         ├── MarkdownCodeBlock.tsx
         ├── ToolCallBlock.tsx
+        ├── Toolbar.tsx
+        ├── icons.tsx
         ├── ModelSelector.tsx
         ├── ContextMeter.tsx
         ├── ToolPanel.tsx
@@ -436,11 +438,11 @@ the UI:
 
 - **chat view.** messages rendered as markdown (with syntax-highlighted code blocks). streaming token display with a visible cursor/caret. assistant messages that carry thinking render a quiet thinking block above their content — live and always expanded while the turn streams, resting expanded at turn end, collapsible by the reader with the collapsed state persisting per message.
 - **tool call visibility.** when the LLM invokes a tool, show it inline — the tool name, arguments (collapsible), and result (collapsible). not hidden, not modal — part of the conversation flow. think Claude Desktop's tool use blocks. each round's thinking block sits above the tool calls that round motivated, so the reader sees the model reason its way into a call.
-- **model selector.** dropdown populated from `/api/models`. persisted in localStorage.
-- **context meter.** compact percentage in the header beside the model selector. it compares the latest `prompt_tokens` measurement with the selected model's exact configured window, then shifts from cool below 50%, to warm from 50–80%, to hot at 80% and above. `?` names the distinct unknown state in its tooltip: no usage yet, a measurement from another model, or no configured window for the measured model.
-- **tool panel.** slide-out sidebar showing discovered MCP tools and server statuses.
-- **system prompt.** editable, with default/custom/none modes, persisted in localStorage.
-- **conversation management.** new chat, history list (localStorage), delete, markdown export.
+- **model selector.** the toolbar's model control: a glyph beside a compact dropdown populated from `/api/models`. persisted in localStorage.
+- **context meter.** the readout in the bar's signal column. it compares the latest `prompt_tokens` measurement with the selected model's exact configured window, then shifts from cool below 50%, to warm from 50–80%, to hot at 80% and above. `?` names the distinct unknown state in its tooltip: no usage yet, a measurement from another model, or no configured window for the measured model.
+- **tool panel.** slide-out sidebar below the bar, opened from the toolbar's tools glyph (lit while open, wearing the tool count as a badge while the count is positive) showing discovered MCP tools and server statuses.
+- **system prompt.** the toolbar's description glyph — lit on the non-default modes — opens a modal holding the mode select (default/custom/none) and, for custom, the text. escape and outside click close it, returning focus to the glyph. mode and text persist in localStorage.
+- **conversation management.** new conversation and export as toolbar actions, the history rail (localStorage) opened from the toolbar's conversations glyph, delete, markdown export.
 
 no auth. no user management. no settings pages. no plugin system.
 
@@ -452,7 +454,7 @@ pane should feel like a calm, literate workspace — closer to Claude Desktop th
 
 **color.** light and dark themes, defaulting to system preference. the palette is restrained — warm neutrals (not blue-gray), with a single accent color for interactive elements and the streaming cursor. think claude.ai's warm sand/cream in light mode, soft charcoal in dark mode. avoid cold grays and saturated colors.
 
-**layout.** centered conversation column with comfortable max-width (960px). sidebar for conversations and tools, collapsible. messages should breathe — generous vertical spacing between turns. tool call blocks are visually distinct but not disruptive: slightly inset, muted background, with expand/collapse affordance.
+**layout.** a 2.6rem toolbar spans the top of the window over the rail and chat — the family's standing chrome: a centered glyph cluster in whitespace-set groups (conversation, reply, machinery), a signal column at the right, a hairline below. the cluster centers on the window and wraps rather than colliding on narrow windows; the rail and the tool panel anchor to the bar's rendered height, so a wrapped, taller bar never obscures them. below it, a centered conversation column with comfortable max-width (960px). sidebar for conversations, collapsible. messages should breathe — generous vertical spacing between turns. tool call blocks are visually distinct but not disruptive: slightly inset, muted background, with expand/collapse affordance.
 
 **interaction.** subtle transitions. no bouncing, no sliding panels, no loading spinners beyond a simple pulsing dot for streaming. the interface should feel like it's already there, waiting — not performing.
 
@@ -478,7 +480,7 @@ system: "You are a helpful assistant."
 # listen address
 listen: 127.0.0.1:8400
 
-# context windows per model id, for the header's context meter.
+# context windows per model id, for the toolbar's context meter.
 # models with no entry and no default show '?' in the meter.
 #context_windows:
 #  qwen2.5:14b: 32768

@@ -69,10 +69,12 @@ pane/
 │           ├── MarkdownCodeBlock.tsx # syntax-highlighted code blocks
 │           ├── ToolCallBlock.tsx # inline tool call with status, approval, args/result
 │           ├── ModelSelector.tsx
-│           ├── ContextMeter.tsx # header context-window usage readout
+│           ├── ContextMeter.tsx # context-window usage readout in the bar's signal column
 │           ├── ToolPanel.tsx   # slide-out tool list with server statuses
 │           ├── ConversationList.tsx
-│           └── SystemPromptEditor.tsx
+│           ├── Toolbar.tsx     # the bar: glyph cluster, model control, signal column
+│           ├── icons.tsx       # hand-rolled Material Symbols glyphs for the bar
+│           └── SystemPromptEditor.tsx # toolbar-mount glyph, modal
 ├── docs/
 │   ├── current/
 │   │   └── pane.md             # design document + built behavior (protocol, event lifecycle, config)

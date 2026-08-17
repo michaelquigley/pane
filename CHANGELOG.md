@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+CHANGE: the header is replaced by the family's toolbar — a 2.6rem bar over the rail and chat, its controls as a centered glyph cluster (new conversation, conversations, export, model, system prompt, tools wearing its count badge), the context meter as the bar's right-hand signal, and the system prompt in a modal opened from the bar. the rail and the tool panel anchor to the bar's rendered height, so a wrapped bar on a narrow window never obscures them.
+
 FEATURE: pane now tracks exact context usage reported by the upstream and shows a compact percentage beside the model selector, with cool, warm, and hot bands as the configured window fills. each round's raw prompt, completion, and total token counts pass through a dedicated `usage` SSE event and ride with the conversation in browser storage. operators provide per-model context windows and an optional default in `pane.yaml`; `include_usage: false` is the escape hatch for endpoints that reject OpenAI's `stream_options` request field.
 
 FEATURE: Model thinking is now streamed and displayed. assistant messages that carry reasoning render a quiet thinking block above their content — live while the turn streams, resting expanded at turn end, collapsible by the reader with the collapsed state persisting per message across reloads. the upstream stream reader tolerates both known reasoning field spellings (`reasoning` and `reasoning_content`), so any OpenAI-compatible backend that streams reasoning under either gets the display. in a tool loop, each round's block sits above the tool calls that round motivated. thinking is display-only by design: it is never returned to the model, and a response with no reasoning tokens renders exactly as before. markdown export skips it.

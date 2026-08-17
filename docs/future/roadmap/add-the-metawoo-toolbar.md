@@ -1,6 +1,6 @@
 ---
 title: add the metawoo toolbar
-state: building
+state: evaluating
 created: 2026-08-17
 tags: [enhancement]
 milestone: v0.1.x
