@@ -143,7 +143,7 @@ func TestHandleChatStripsReasoningFieldsFromUpstreamRequest(t *testing.T) {
 
 	api := &API{
 		cfg:       &config.Config{Model: "test-model"},
-		llm:       llm.NewClient(server.URL, "test-model", ""),
+		llm:       llm.NewClient(server.URL, "test-model", "", true),
 		mcp:       mcp.NewManager(nil),
 		approvals: NewApprovalRegistry(),
 	}

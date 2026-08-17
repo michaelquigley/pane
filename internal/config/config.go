@@ -11,12 +11,15 @@ import (
 )
 
 type Config struct {
-	Endpoint string
-	ApiKey   string
-	Model    string
-	System   string
-	Listen   string
-	MCP      *MCPConfig
+	Endpoint             string
+	ApiKey               string
+	Model                string
+	System               string
+	Listen               string
+	ContextWindows       map[string]int
+	DefaultContextWindow int
+	IncludeUsage         bool
+	MCP                  *MCPConfig
 }
 
 type MCPConfig struct {
@@ -25,7 +28,7 @@ type MCPConfig struct {
 }
 
 type ServerConfig struct {
-	Command string            `dd:",+required"`
+	Command string `dd:",+required"`
 	Args    []string
 	Env     map[string]string
 	Approve bool
@@ -34,10 +37,11 @@ type ServerConfig struct {
 
 func DefaultConfig() *Config {
 	return &Config{
-		Endpoint: "http://localhost:18080/v1",
-		Model:    "qwen2.5:14b",
-		System:   "You are a helpful assistant.",
-		Listen:   "127.0.0.1:8400",
+		Endpoint:     "http://localhost:18080/v1",
+		Model:        "qwen2.5:14b",
+		System:       "You are a helpful assistant.",
+		Listen:       "127.0.0.1:8400",
+		IncludeUsage: true,
 		MCP: &MCPConfig{
 			Separator: "_",
 		},
@@ -69,6 +73,14 @@ func (c *Config) Validate() error {
 	}
 	if c.Listen == "" {
 		return fmt.Errorf("listen address is required")
+	}
+	for model, window := range c.ContextWindows {
+		if window <= 0 {
+			return fmt.Errorf("context window for %q must be greater than zero", model)
+		}
+	}
+	if c.DefaultContextWindow < 0 {
+		return fmt.Errorf("default context window must be greater than zero when set")
 	}
 	if c.MCP != nil {
 		for name, sc := range c.MCP.Servers {
@@ -107,5 +119,3 @@ func globalConfigPath() string {
 	}
 	return filepath.Join(home, ".config", "pane", "config.yaml")
 }
-
-

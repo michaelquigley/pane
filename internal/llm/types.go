@@ -4,10 +4,15 @@ import "encoding/json"
 
 // ChatRequest is an OpenAI-compatible chat completion request.
 type ChatRequest struct {
-	Model    string    `json:"model"`
-	Messages []Message `json:"messages"`
-	Tools    []Tool    `json:"tools,omitempty"`
-	Stream   bool      `json:"stream"`
+	Model         string         `json:"model"`
+	Messages      []Message      `json:"messages"`
+	Tools         []Tool         `json:"tools,omitempty"`
+	Stream        bool           `json:"stream"`
+	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
+}
+
+type StreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 // Message is an OpenAI-compatible chat message.
@@ -54,6 +59,13 @@ type ToolCallFunction struct {
 type StreamChunk struct {
 	ID      string   `json:"id"`
 	Choices []Choice `json:"choices"`
+	Usage   *Usage   `json:"usage,omitempty"`
+}
+
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
 // Choice is a single choice in a streaming chunk.

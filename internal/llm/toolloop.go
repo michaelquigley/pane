@@ -203,59 +203,65 @@ func RunToolLoop(
 				break
 			}
 
-			if len(chunk.Choices) == 0 {
-				continue
-			}
+			if len(chunk.Choices) > 0 {
+				delta := chunk.Choices[0].Delta
 
-			delta := chunk.Choices[0].Delta
-
-			// content tokens
-			if delta.Content != nil && *delta.Content != "" {
-				contentBuf.WriteString(*delta.Content)
-				_ = sw.Send("delta", sse.DeltaData{Content: *delta.Content})
-			}
-
-			// thinking tokens: pass-through only. llm.Message carries no
-			// reasoning field, so the re-sent history never echoes them.
-			if delta.Reasoning != nil && *delta.Reasoning != "" {
-				_ = sw.Send("thinking_delta", sse.ThinkingDeltaData{Content: *delta.Reasoning})
-			}
-
-			// tool call tokens
-			if len(delta.ToolCalls) > 0 {
-				sawToolCallDelta = true
-			}
-			for _, tc := range delta.ToolCalls {
-				idx := 0
-				if tc.Index != nil {
-					idx = *tc.Index
+				// content tokens
+				if delta.Content != nil && *delta.Content != "" {
+					contentBuf.WriteString(*delta.Content)
+					_ = sw.Send("delta", sse.DeltaData{Content: *delta.Content})
 				}
 
-				existing, ok := pending[idx]
-				if !ok {
-					existing = &pendingToolCall{
-						ID:    nextToolCallID(iteration, idx),
-						Name:  tc.Function.Name,
-						Index: idx,
+				// thinking tokens: pass-through only. llm.Message carries no
+				// reasoning field, so the re-sent history never echoes them.
+				if delta.Reasoning != nil && *delta.Reasoning != "" {
+					_ = sw.Send("thinking_delta", sse.ThinkingDeltaData{Content: *delta.Reasoning})
+				}
+
+				// tool call tokens
+				if len(delta.ToolCalls) > 0 {
+					sawToolCallDelta = true
+				}
+				for _, tc := range delta.ToolCalls {
+					idx := 0
+					if tc.Index != nil {
+						idx = *tc.Index
 					}
-					pending[idx] = existing
-					emitToolCallStart(sw, existing)
-				}
 
-				// accumulate name if it arrives in later chunks
-				if tc.Function.Name != "" {
-					existing.Name = tc.Function.Name
-				}
+					existing, ok := pending[idx]
+					if !ok {
+						existing = &pendingToolCall{
+							ID:    nextToolCallID(iteration, idx),
+							Name:  tc.Function.Name,
+							Index: idx,
+						}
+						pending[idx] = existing
+						emitToolCallStart(sw, existing)
+					}
 
-				// accumulate arguments
-				if tc.Function.Arguments != "" {
-					existing.Arguments += tc.Function.Arguments
-					_ = sw.Send("tool_call_args", sse.ToolCallArgsData{
-						Index:            existing.Index,
-						ID:               existing.ID,
-						ArgumentsPartial: tc.Function.Arguments,
-					})
+					// accumulate name if it arrives in later chunks
+					if tc.Function.Name != "" {
+						existing.Name = tc.Function.Name
+					}
+
+					// accumulate arguments
+					if tc.Function.Arguments != "" {
+						existing.Arguments += tc.Function.Arguments
+						_ = sw.Send("tool_call_args", sse.ToolCallArgsData{
+							Index:            existing.Index,
+							ID:               existing.ID,
+							ArgumentsPartial: tc.Function.Arguments,
+						})
+					}
 				}
+			}
+
+			if chunk.Usage != nil {
+				_ = sw.Send("usage", sse.UsageData{
+					PromptTokens:     chunk.Usage.PromptTokens,
+					CompletionTokens: chunk.Usage.CompletionTokens,
+					TotalTokens:      chunk.Usage.TotalTokens,
+				})
 			}
 		}
 		stream.Close()

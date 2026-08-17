@@ -53,6 +53,12 @@ type ThinkingDeltaData struct {
 	Content string `json:"content"`
 }
 
+type UsageData struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
 type ErrorData struct {
 	Code       string `json:"code"`
 	Message    string `json:"message"`

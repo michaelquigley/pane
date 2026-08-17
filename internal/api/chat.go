@@ -1,10 +1,10 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 
+	"github.com/michaelquigley/df/dd"
 	"github.com/michaelquigley/df/dl"
 	"github.com/michaelquigley/pane/internal/config"
 	"github.com/michaelquigley/pane/internal/llm"
@@ -12,15 +12,15 @@ import (
 )
 
 type chatRequest struct {
-	Model            string        `json:"model"`
-	Messages         []llm.Message `json:"messages"`
-	SystemPromptMode string        `json:"system_prompt_mode"`
-	SystemPrompt     string        `json:"system_prompt"`
+	Model            string
+	Messages         []llm.Message
+	SystemPromptMode string
+	SystemPrompt     string
 }
 
 func (a *API) handleChat(w http.ResponseWriter, r *http.Request) {
 	var req chatRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := dd.BindJSONReader(&req, r.Body); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}

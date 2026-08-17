@@ -82,6 +82,71 @@ func TestStreamReaderErrorsAfterChunkWithoutDone(t *testing.T) {
 	}
 }
 
+func TestStreamReaderParsesUsageChunk(t *testing.T) {
+	t.Parallel()
+
+	reader := NewStreamReader(newStreamBody("data: {\"id\":\"chat-usage\",\"choices\":[],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":7,\"total_tokens\":18}}\n\n" +
+		"data: [DONE]\n\n"))
+
+	chunk, err := reader.Recv()
+	if err != nil {
+		t.Fatalf("receiving stream chunk: %v", err)
+	}
+	if len(chunk.Choices) != 0 {
+		t.Fatalf("expected empty choices, got %#v", chunk.Choices)
+	}
+	if chunk.Usage == nil {
+		t.Fatalf("expected usage payload")
+	}
+	if chunk.Usage.PromptTokens != 11 || chunk.Usage.CompletionTokens != 7 || chunk.Usage.TotalTokens != 18 {
+		t.Fatalf("unexpected usage payload: %#v", chunk.Usage)
+	}
+}
+
+func TestStreamReaderParsesChoicesAndUsageOnSameChunk(t *testing.T) {
+	t.Parallel()
+
+	reader := NewStreamReader(newStreamBody("data: {\"id\":\"chat-usage\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"}}],\"usage\":{\"prompt_tokens\":13,\"completion_tokens\":2,\"total_tokens\":15}}\n\n" +
+		"data: [DONE]\n\n"))
+
+	chunk, err := reader.Recv()
+	if err != nil {
+		t.Fatalf("receiving stream chunk: %v", err)
+	}
+	if len(chunk.Choices) != 1 || chunk.Choices[0].Delta.Content == nil || *chunk.Choices[0].Delta.Content != "hi" {
+		t.Fatalf("unexpected choices payload: %#v", chunk.Choices)
+	}
+	if chunk.Usage == nil {
+		t.Fatalf("expected usage payload")
+	}
+	if chunk.Usage.PromptTokens != 13 || chunk.Usage.CompletionTokens != 2 || chunk.Usage.TotalTokens != 15 {
+		t.Fatalf("unexpected usage payload: %#v", chunk.Usage)
+	}
+}
+
+func TestStreamReaderLeavesUsageNilWhenAbsent(t *testing.T) {
+	t.Parallel()
+
+	reader := NewStreamReader(newStreamBody(streamDataLine(t, StreamChunk{
+		ID: "chat-1",
+		Choices: []Choice{{
+			Index: 0,
+			Delta: Delta{
+				Content: StringContent("hello"),
+			},
+		}},
+	}) + "\n" +
+		"data: [DONE]\n\n"))
+
+	chunk, err := reader.Recv()
+	if err != nil {
+		t.Fatalf("receiving stream chunk: %v", err)
+	}
+	if chunk.Usage != nil {
+		t.Fatalf("expected nil usage, got %#v", chunk.Usage)
+	}
+}
+
 func newStreamBody(body string) io.ReadCloser {
 	return io.NopCloser(strings.NewReader(body))
 }

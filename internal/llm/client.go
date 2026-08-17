@@ -15,14 +15,16 @@ type Client struct {
 	baseURL      string
 	apiKey       string
 	DefaultModel string
+	IncludeUsage bool
 }
 
-func NewClient(endpoint, model, apiKey string) *Client {
+func NewClient(endpoint, model, apiKey string, includeUsage bool) *Client {
 	return &Client{
 		httpClient:   &http.Client{},
 		baseURL:      strings.TrimRight(endpoint, "/"),
 		apiKey:       apiKey,
 		DefaultModel: model,
+		IncludeUsage: includeUsage,
 	}
 }
 
@@ -60,6 +62,9 @@ func (c *Client) ListModels(ctx context.Context) (*ModelsResponse, error) {
 
 func (c *Client) StreamChat(ctx context.Context, chatReq *ChatRequest) (*StreamReader, error) {
 	chatReq.Stream = true
+	if c.IncludeUsage {
+		chatReq.StreamOptions = &StreamOptions{IncludeUsage: true}
+	}
 
 	body, err := json.Marshal(chatReq)
 	if err != nil {

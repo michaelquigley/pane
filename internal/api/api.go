@@ -1,9 +1,9 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 
+	"github.com/michaelquigley/df/dd"
 	"github.com/michaelquigley/pane/internal/config"
 	"github.com/michaelquigley/pane/internal/llm"
 	"github.com/michaelquigley/pane/internal/mcp"
@@ -14,6 +14,18 @@ type API struct {
 	llm       *llm.Client
 	mcp       *mcp.Manager
 	approvals *ApprovalRegistry
+}
+
+type healthResponse struct {
+	Status string
+}
+
+type configResponse struct {
+	DefaultSystem        string
+	DefaultModel         string
+	MCPSeparator         string
+	ContextWindows       map[string]int `dd:",+omitempty"`
+	DefaultContextWindow int            `dd:",+omitempty"`
 }
 
 func NewAPI(cfg *config.Config, llmClient *llm.Client, mcpMgr *mcp.Manager) *API {
@@ -36,7 +48,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 
 func (a *API) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	_ = dd.UnbindJSONWriter(healthResponse{Status: "ok"}, w)
 }
 
 func (a *API) handleConfig(w http.ResponseWriter, _ *http.Request) {
@@ -46,9 +58,11 @@ func (a *API) handleConfig(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{
-		"default_system": a.cfg.System,
-		"default_model":  a.cfg.Model,
-		"mcp_separator":  separator,
-	})
+	_ = dd.UnbindJSONWriter(configResponse{
+		DefaultSystem:        a.cfg.System,
+		DefaultModel:         a.cfg.Model,
+		MCPSeparator:         separator,
+		ContextWindows:       a.cfg.ContextWindows,
+		DefaultContextWindow: a.cfg.DefaultContextWindow,
+	}, w)
 }

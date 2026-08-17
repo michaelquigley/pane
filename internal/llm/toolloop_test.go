@@ -160,7 +160,7 @@ func TestRunToolLoopStreamsThinkingDeltasAndKeepsResentHistoryClean(t *testing.T
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-model", "")
+	client := NewClient(server.URL, "test-model", "", true)
 	recorder := httptest.NewRecorder()
 	sw, err := sse.NewWriter(recorder)
 	if err != nil {
@@ -322,7 +322,7 @@ func TestRunToolLoopEmitsRoundCompletePerIteration(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-model", "")
+	client := NewClient(server.URL, "test-model", "", true)
 	recorder := httptest.NewRecorder()
 	sw, err := sse.NewWriter(recorder)
 	if err != nil {
@@ -486,7 +486,7 @@ func TestRunToolLoopEmitsIndexedToolEventsForFragmentedMetadata(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-model", "")
+	client := NewClient(server.URL, "test-model", "", true)
 	recorder := httptest.NewRecorder()
 	sw, err := sse.NewWriter(recorder)
 	if err != nil {
@@ -639,7 +639,7 @@ func TestRunToolLoopEmitsIndexedToolEventsForInterleavedToolCalls(t *testing.T) 
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-model", "")
+	client := NewClient(server.URL, "test-model", "", true)
 	recorder := httptest.NewRecorder()
 	sw, err := sse.NewWriter(recorder)
 	if err != nil {
@@ -760,7 +760,7 @@ func TestRunToolLoopSynthesizesIDsForMissingUpstreamToolCallIDs(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-model", "")
+	client := NewClient(server.URL, "test-model", "", true)
 	recorder := httptest.NewRecorder()
 	sw, err := sse.NewWriter(recorder)
 	if err != nil {
@@ -884,7 +884,7 @@ func TestRunToolLoopAssignsDistinctIDsForDuplicateUpstreamToolCallIDs(t *testing
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-model", "")
+	client := NewClient(server.URL, "test-model", "", true)
 	recorder := httptest.NewRecorder()
 	sw, err := sse.NewWriter(recorder)
 	if err != nil {
@@ -1001,7 +1001,7 @@ func TestRunToolLoopUsesCanonicalIDForApprovalWithoutUpstreamID(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-model", "")
+	client := NewClient(server.URL, "test-model", "", true)
 	recorder := httptest.NewRecorder()
 	sw, err := sse.NewWriter(recorder)
 	if err != nil {
@@ -1086,7 +1086,7 @@ func TestRunToolLoopForcesFinalAnswerAfterRepeatedExecutionError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-model", "")
+	client := NewClient(server.URL, "test-model", "", true)
 	recorder := httptest.NewRecorder()
 	sw, err := sse.NewWriter(recorder)
 	if err != nil {
@@ -1170,7 +1170,7 @@ func TestRunToolLoopForcesFinalAnswerAfterRepeatedDeniedApproval(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-model", "")
+	client := NewClient(server.URL, "test-model", "", true)
 	recorder := httptest.NewRecorder()
 	sw, err := sse.NewWriter(recorder)
 	if err != nil {
@@ -1254,7 +1254,7 @@ func TestRunToolLoopForcesFinalAnswerAfterRepeatedMalformedArguments(t *testing.
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-model", "")
+	client := NewClient(server.URL, "test-model", "", true)
 	recorder := httptest.NewRecorder()
 	sw, err := sse.NewWriter(recorder)
 	if err != nil {
@@ -1341,7 +1341,7 @@ func TestRunToolLoopNormalizesRepeatedFailureArguments(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-model", "")
+	client := NewClient(server.URL, "test-model", "", true)
 	recorder := httptest.NewRecorder()
 	sw, err := sse.NewWriter(recorder)
 	if err != nil {
@@ -1396,7 +1396,7 @@ func TestRunToolLoopErrorsIfForcedFinalReturnsToolCalls(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-model", "")
+	client := NewClient(server.URL, "test-model", "", true)
 	recorder := httptest.NewRecorder()
 	sw, err := sse.NewWriter(recorder)
 	if err != nil {
@@ -1474,7 +1474,7 @@ func TestRunToolLoopEmitsRoundCompleteForNoToolResponses(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-model", "")
+	client := NewClient(server.URL, "test-model", "", true)
 	recorder := httptest.NewRecorder()
 	sw, err := sse.NewWriter(recorder)
 	if err != nil {
@@ -1527,7 +1527,7 @@ func TestRunToolLoopErrorsOnUpstreamEOFBeforeDone(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-model", "")
+	client := NewClient(server.URL, "test-model", "", true)
 	recorder := httptest.NewRecorder()
 	sw, err := sse.NewWriter(recorder)
 	if err != nil {
@@ -1586,7 +1586,7 @@ func TestRunToolLoopDoesNotExecuteToolsAfterUpstreamEOFBeforeDone(t *testing.T) 
 	}))
 	defer server.Close()
 
-	client := NewClient(server.URL, "test-model", "")
+	client := NewClient(server.URL, "test-model", "", true)
 	recorder := httptest.NewRecorder()
 	sw, err := sse.NewWriter(recorder)
 	if err != nil {
@@ -1623,6 +1623,346 @@ func TestRunToolLoopDoesNotExecuteToolsAfterUpstreamEOFBeforeDone(t *testing.T) 
 	if errorData.Code != "upstream_error" {
 		t.Fatalf("expected upstream_error code, got %q", errorData.Code)
 	}
+}
+
+func TestRunToolLoopEmitsUsageBeforeRoundComplete(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		writeStreamChunk(t, w, StreamChunk{
+			ID: "chat-1",
+			Choices: []Choice{{
+				Index: 0,
+				Delta: Delta{Content: StringContent("hello")},
+			}},
+		})
+		writeUsageChunk(t, w, "chat-1", 21, 4, 25)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-model", "", true)
+	recorder := httptest.NewRecorder()
+	sw, err := sse.NewWriter(recorder)
+	if err != nil {
+		t.Fatalf("creating SSE writer: %v", err)
+	}
+
+	err = RunToolLoop(
+		context.Background(),
+		client,
+		[]Message{{Role: "user", Content: StringContent("say hello")}},
+		"test-model",
+		nil,
+		testExecutor{},
+		sw,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("running tool loop: %v", err)
+	}
+
+	events := parseRecordedEvents(t, recorder.Body.String())
+	assertEventTypes(t, events, "delta", "usage", "round_complete", "done")
+	assertUsageEvent(t, events[1], 21, 4, 25)
+}
+
+func TestRunToolLoopEmitsDeltaBeforeUsageOnCombinedChunk(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		writeStreamChunk(t, w, StreamChunk{
+			ID: "chat-1",
+			Choices: []Choice{{
+				Index: 0,
+				Delta: Delta{Content: StringContent("done")},
+			}},
+			Usage: &Usage{PromptTokens: 31, CompletionTokens: 3, TotalTokens: 34},
+		})
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-model", "", true)
+	recorder := httptest.NewRecorder()
+	sw, err := sse.NewWriter(recorder)
+	if err != nil {
+		t.Fatalf("creating SSE writer: %v", err)
+	}
+
+	err = RunToolLoop(
+		context.Background(),
+		client,
+		[]Message{{Role: "user", Content: StringContent("finish")}},
+		"test-model",
+		nil,
+		testExecutor{},
+		sw,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("running tool loop: %v", err)
+	}
+
+	events := parseRecordedEvents(t, recorder.Body.String())
+	assertEventTypes(t, events, "delta", "usage", "round_complete", "done")
+	assertUsageEvent(t, events[1], 31, 3, 34)
+}
+
+func TestRunToolLoopEmitsOneUsageEventPerRound(t *testing.T) {
+	t.Parallel()
+
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "text/event-stream")
+
+		switch requestCount {
+		case 1:
+			writeStreamChunk(t, w, StreamChunk{
+				ID: "chat-1",
+				Choices: []Choice{{
+					Index: 0,
+					Delta: Delta{Content: StringContent("checking")},
+				}},
+			})
+			writeSingleToolCallChunk(t, w, "filesystem_read_file", `{"path":"README.md"}`)
+			writeUsageChunk(t, w, "chat-1", 40, 6, 46)
+		case 2:
+			writeStreamChunk(t, w, StreamChunk{
+				ID: "chat-2",
+				Choices: []Choice{{
+					Index: 0,
+					Delta: Delta{Content: StringContent("done")},
+				}},
+			})
+			writeUsageChunk(t, w, "chat-2", 75, 5, 80)
+		default:
+			t.Fatalf("unexpected chat completion request %d", requestCount)
+		}
+
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-model", "", true)
+	recorder := httptest.NewRecorder()
+	sw, err := sse.NewWriter(recorder)
+	if err != nil {
+		t.Fatalf("creating SSE writer: %v", err)
+	}
+
+	err = RunToolLoop(
+		context.Background(),
+		client,
+		[]Message{{Role: "user", Content: StringContent("read the README")}},
+		"test-model",
+		[]Tool{{
+			Type: "function",
+			Function: &FunctionDef{
+				Name:       "filesystem_read_file",
+				Parameters: json.RawMessage(`{"type":"object"}`),
+			},
+		}},
+		testExecutor{result: "README contents"},
+		sw,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("running tool loop: %v", err)
+	}
+
+	events := parseRecordedEvents(t, recorder.Body.String())
+	assertEventTypes(t, events,
+		"delta",
+		"tool_call_start",
+		"tool_call_args",
+		"usage",
+		"tool_call_executing",
+		"tool_call_result",
+		"round_complete",
+		"delta",
+		"usage",
+		"round_complete",
+		"done",
+	)
+	assertUsageEvent(t, events[3], 40, 6, 46)
+	assertUsageEvent(t, events[8], 75, 5, 80)
+}
+
+func TestRunToolLoopSetsStreamOptionsOnEveryRoundWhenUsageIncluded(t *testing.T) {
+	t.Parallel()
+
+	var bodiesMu sync.Mutex
+	rawBodies := make([]string, 0, 2)
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("reading request body: %v", err)
+		}
+
+		bodiesMu.Lock()
+		rawBodies = append(rawBodies, string(body))
+		requestCount++
+		count := requestCount
+		bodiesMu.Unlock()
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		switch count {
+		case 1:
+			writeSingleToolCallChunk(t, w, "filesystem_read_file", `{"path":"README.md"}`)
+		case 2:
+			writeStreamChunk(t, w, StreamChunk{
+				ID: "chat-2",
+				Choices: []Choice{{
+					Index: 0,
+					Delta: Delta{Content: StringContent("done")},
+				}},
+			})
+		default:
+			t.Fatalf("unexpected chat completion request %d", count)
+		}
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-model", "", true)
+	err := runUsageRequestBodyLoop(t, client)
+	if err != nil {
+		t.Fatalf("running tool loop: %v", err)
+	}
+
+	bodiesMu.Lock()
+	bodies := append([]string(nil), rawBodies...)
+	bodiesMu.Unlock()
+
+	if len(bodies) != 2 {
+		t.Fatalf("expected 2 upstream requests, got %d", len(bodies))
+	}
+	for idx, body := range bodies {
+		if !strings.Contains(body, `"stream_options":{"include_usage":true}`) {
+			t.Fatalf("upstream request %d missing include_usage stream_options: %s", idx+1, body)
+		}
+	}
+}
+
+func TestRunToolLoopOmitsStreamOptionsWhenUsageDisabled(t *testing.T) {
+	t.Parallel()
+
+	var upstreamBody string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("reading request body: %v", err)
+		}
+		upstreamBody = string(body)
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		writeStreamChunk(t, w, StreamChunk{
+			ID: "chat-1",
+			Choices: []Choice{{
+				Index: 0,
+				Delta: Delta{Content: StringContent("done")},
+			}},
+		})
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-model", "", false)
+	recorder := httptest.NewRecorder()
+	sw, err := sse.NewWriter(recorder)
+	if err != nil {
+		t.Fatalf("creating SSE writer: %v", err)
+	}
+
+	err = RunToolLoop(
+		context.Background(),
+		client,
+		[]Message{{Role: "user", Content: StringContent("finish")}},
+		"test-model",
+		nil,
+		testExecutor{},
+		sw,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("running tool loop: %v", err)
+	}
+	if strings.Contains(upstreamBody, "stream_options") {
+		t.Fatalf("upstream request carries stream_options while usage disabled: %s", upstreamBody)
+	}
+}
+
+func TestRunToolLoopKeepsNoUsageStreamSequenceUnchanged(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		writeStreamChunk(t, w, StreamChunk{
+			ID: "chat-1",
+			Choices: []Choice{{
+				Index: 0,
+				Delta: Delta{Content: StringContent("done")},
+			}},
+		})
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-model", "", true)
+	recorder := httptest.NewRecorder()
+	sw, err := sse.NewWriter(recorder)
+	if err != nil {
+		t.Fatalf("creating SSE writer: %v", err)
+	}
+
+	err = RunToolLoop(
+		context.Background(),
+		client,
+		[]Message{{Role: "user", Content: StringContent("finish")}},
+		"test-model",
+		nil,
+		testExecutor{},
+		sw,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("running tool loop: %v", err)
+	}
+
+	events := parseRecordedEvents(t, recorder.Body.String())
+	assertEventTypes(t, events, "delta", "round_complete", "done")
+}
+
+func runUsageRequestBodyLoop(t *testing.T, client *Client) error {
+	t.Helper()
+
+	recorder := httptest.NewRecorder()
+	sw, err := sse.NewWriter(recorder)
+	if err != nil {
+		t.Fatalf("creating SSE writer: %v", err)
+	}
+
+	return RunToolLoop(
+		context.Background(),
+		client,
+		[]Message{{Role: "user", Content: StringContent("read the README")}},
+		"test-model",
+		[]Tool{{
+			Type: "function",
+			Function: &FunctionDef{
+				Name:       "filesystem_read_file",
+				Parameters: json.RawMessage(`{"type":"object"}`),
+			},
+		}},
+		testExecutor{result: "README contents"},
+		sw,
+		nil,
+	)
 }
 
 func TestExecuteSingleToolReturnsStructuredOutcomes(t *testing.T) {
@@ -1735,6 +2075,20 @@ func TestExecuteSingleToolReturnsStructuredOutcomes(t *testing.T) {
 	}
 }
 
+func writeUsageChunk(t *testing.T, w http.ResponseWriter, id string, promptTokens, completionTokens, totalTokens int) {
+	t.Helper()
+
+	writeStreamChunk(t, w, StreamChunk{
+		ID:      id,
+		Choices: []Choice{},
+		Usage: &Usage{
+			PromptTokens:     promptTokens,
+			CompletionTokens: completionTokens,
+			TotalTokens:      totalTokens,
+		},
+	})
+}
+
 func writeStreamChunk(t *testing.T, w http.ResponseWriter, chunk StreamChunk) {
 	t.Helper()
 
@@ -1826,6 +2180,21 @@ func parseRecordedEvents(t *testing.T, output string) []recordedEvent {
 		events = append(events, event)
 	}
 	return events
+}
+
+func assertUsageEvent(t *testing.T, event recordedEvent, promptTokens, completionTokens, totalTokens int) {
+	t.Helper()
+
+	if event.Type != "usage" {
+		t.Fatalf("expected usage event, got %q", event.Type)
+	}
+	var payload sse.UsageData
+	if err := json.Unmarshal(event.Data, &payload); err != nil {
+		t.Fatalf("unmarshaling usage event: %v", err)
+	}
+	if payload.PromptTokens != promptTokens || payload.CompletionTokens != completionTokens || payload.TotalTokens != totalTokens {
+		t.Fatalf("unexpected usage payload: %#v", payload)
+	}
 }
 
 func assertEventTypes(t *testing.T, events []recordedEvent, expected ...string) {
