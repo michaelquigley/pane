@@ -1,9 +1,10 @@
 ---
 title: per-model thinking control
-state: horizon
+state: researching
 created: 2026-08-16
 tags: [feature]
 subsystems: [backend]
+milestone: v0.1.x
 ---
 
 Let the reader enable or disable model thinking. Forcing thinking on or off means model-specific request extras (`enable_thinking`, chat-template knobs) plus a config surface, and knowledge of what each backend accepts — pane talks to ninfer directly, with no gateway layer such extras would be configured on.

@@ -1,9 +1,10 @@
 ---
 title: toolbar screen-reader announcer
-state: horizon
+state: researching
 created: 2026-08-17
 tags: [enhancement]
 subsystems: [frontend]
+milestone: v0.1.x
 ---
 
 a polite live region in the toolbar announcing turn and tool-approval transitions (flo's JobAnnouncer pattern): turn started, a tool call awaiting approval, round complete, turn failed. always mounted because the toolbar never unmounts; the visible state already rides the badge and the message flow, so this renders the screen-reader channel only.

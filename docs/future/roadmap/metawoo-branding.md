@@ -1,9 +1,10 @@
 ---
-title: pane as a metawoo product
-state: horizon
+title: metawoo branding
+state: researching
 created: 2026-08-17
 tags: [feature]
 subsystems: [frontend]
+milestone: v0.1.x
 ---
 
 the branding call: adopt the metawoo software products identity pack for pane — a per-product accent, a wordmark, and a favicon set. the bar carries pane's own accent today; the pack's substrate question comes due here: the metawoo substrate is light-only paper while pane keeps dark mode, so the call is whether pane joins the pack's light-only paper or keeps its theme. a branding call, not a chrome call.

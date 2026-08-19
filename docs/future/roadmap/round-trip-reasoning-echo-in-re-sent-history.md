@@ -1,9 +1,10 @@
 ---
 title: round-trip reasoning echo in re-sent history
-state: horizon
+state: researching
 created: 2026-08-16
-tags: [feature]
+tags: [feature, spike]
 subsystems: [backend]
+milestone: v0.1.x
 ---
 
 Echo prior turns' reasoning back in the re-sent chat history: add a reasoning field to the backend request `Message` type and include it in the re-sent messages. v1 persisted the thinking in the conversation (localStorage), so this is a small change — no data loss, no migration. The upstream spelling the model endpoint accepts for echoed reasoning would need confirming against ninfer, the same way the display capture confirmed `reasoning_content` on the wire.

@@ -1,5 +1,19 @@
 researching:
-  - persistent-not-localstorage-sessions.md
-  - authentication-and-accounts.md
+  - metawoo-branding.md
+  - authentication.md
+  - connection-indicator-on-the-toolbar.md
+  - toolbar-stream-and-approval-signals.md
+  - toolbar-settings-surface.md
+  - toolbar-screen-reader-announcer.md
+  - server-assigned-session-versioning.md
+  - per-model-thinking-control.md
+  - camelcase-snakecase.md
+  - multi-model-conversation-records.md
+  - other-reasoning-wire-formats.md
+  - reasoning-in-the-markdown-export.md
+  - reasoning-token-accounting.md
+  - round-trip-reasoning-echo-in-re-sent-history.md
+  - auto-compaction.md
 evaluating:
 building:
+  - persistent-not-localstorage-sessions.md
