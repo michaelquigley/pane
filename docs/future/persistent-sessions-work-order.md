@@ -47,7 +47,7 @@ two stages. stage 1 is backend-only and verifiable headless with curl; stage 2 r
 ### api — `internal/api/sessions.go` + `api.go`
 
 - `API` struct gains `sessions *session.Store`. `NewAPI` takes it.
-- routes: `GET /api/sessions`, `GET /api/sessions/{id}`, `PUT /api/sessions/{id}`, `DELETE /api/sessions/{id}`, `DELETE /api/sessions`.
+- routes: `GET /api/sessions`, `GET /api/sessions/{id}`, `PUT /api/sessions/{id}`, `DELETE /api/sessions/{id}` — there is no collection route: clear-all was removed from the design (round-4 review triage, 2026-08-19), and bulk deletion of the estate is the operator's file operation on the data directory.
 - `handleListSessions` — `store.List()`, the projection fills `Summary` — `ID` from the file's name stem, the rest with a forgiving `dd` bind under explicit camelCase name tags (`createdAt`, `updatedAt`) — exact-key in both directions, the project's convention — and responds `{"sessions": [...]}` through `dd.UnbindJSONWriter`. an empty store returns `{"sessions": []}`, never null.
 - `handleGetSession` — missing: `404 {"error": "session 'id' not found"}`. stored but unparseable: `500 {"error": "session 'id' is not a valid document"}`. otherwise the raw stored bytes with `Content-Type: application/json`.
 - `handleSaveSession` — `io.ReadAll` the body; `store.Save`; `ErrUnsafeID` / `ErrInvalidDocument` → `400 {"error": "..."}` with the store's reason, `ErrOversized` → `413`, and any other store error (an operational filesystem failure) → `500 {"error": "..."}` naming the failure — a disk write error is never reported as a client error. success `204`.
@@ -61,9 +61,10 @@ after config load, before the server starts:
 ```go
 dir, err := cfg.SessionDataDir()
 // on err: dl.Fatalf("session store: %v", err)
-store, err := session.NewStore(filepath.Join(dir, "sessions"))
+storeDir := filepath.Join(dir, "sessions")
+store, err := session.NewStore(storeDir)
 // on err: dl.Fatalf("session store: %v", err)
-dl.Infof("session store: '%s'", dir)
+dl.Infof("session store: '%s'", storeDir)
 ```
 
 `api.NewAPI` receives the store.
@@ -76,7 +77,7 @@ dl.Infof("session store: '%s'", dir)
   - `PUT /api/sessions/abc` with a conversation document body → 204; `GET /api/sessions/abc` returns the bytes unchanged (the body carries no id — it is the file's name); the list shows its projection sorted by updated, id ordinal-ascending as the tiebreak.
   - `PUT` with a body that is not a JSON object (an array, a bare string) → 400; with duplicate keys or trailing data → 400 (strict intake); with invalid JSON → 400; path via `GET /api/sessions/..` → not a route (mux), and a directly-constructed store call with `..` fails `safeID`. a file renamed out of band (`mv abc.json zed.json`) is listed and served as `zed` — the id is the name, so nothing fails. a file renamed out of band to a URL-reserved name (`mv abc.json 'issue#1.json'`) is listed as `issue#1` and round-trips `GET` / `PUT` / `DELETE` under its encoded form (`/api/sessions/issue%231`) — the encode lives in the frontend adapter (and in curl here), the backend is unchanged.
   - a forced operational store failure (e.g. a read-only data directory) on `PUT` → 500 naming the filesystem error, never 400/413.
-  - `DELETE /api/sessions/abc` → 204; again → 404; `DELETE /api/sessions` → 204 and the directory is empty.
+  - `DELETE /api/sessions/abc` → 204; again → 404; a collection `DELETE /api/sessions` (the retired clear-all route) is not a route — the mux answers `405` (the path is known to the list route, the method is not), and bulk deletion remains the operator's file operation.
   - two `PUT`s of different sizes to the same id: the file is always a complete document (atomic rename).
 - a non-writable `data_dir` fails startup with the clear error — through the `NewStore` write probe, which catches the case where the sessions directory already exists but the process cannot write inside it.
 - `data_dir: ~/pane-test` creates its tree under the home directory, not a literal `./~` beneath pane's working directory.

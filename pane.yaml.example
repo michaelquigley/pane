@@ -17,6 +17,9 @@ system: "You are a helpful assistant."
 # listen address
 listen: 127.0.0.1:8400
 
+# location of the session store (default shown)
+#data_dir: ~/.local/share/pane
+
 # context windows per model id, for the header's context meter.
 # models with no entry and no default show '?' in the meter.
 #context_windows:

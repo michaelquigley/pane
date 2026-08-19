@@ -93,3 +93,92 @@ func TestValidateRejectsInvalidContextWindows(t *testing.T) {
 		})
 	}
 }
+
+func TestSessionDataDirUsesConfiguredValue(t *testing.T) {
+	cfg := &Config{DataDir: "/srv/pane/data"}
+
+	dir, err := cfg.SessionDataDir()
+	if err != nil {
+		t.Fatalf("resolving data dir: %v", err)
+	}
+	if dir != "/srv/pane/data" {
+		t.Fatalf("expected the configured value, got %q", dir)
+	}
+}
+
+func TestSessionDataDirExpandsLeadingTilde(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home directory: %v", err)
+	}
+	cfg := &Config{DataDir: "~/pane-test"}
+
+	dir, err := cfg.SessionDataDir()
+	if err != nil {
+		t.Fatalf("resolving data dir: %v", err)
+	}
+	if dir != filepath.Join(home, "pane-test") {
+		t.Fatalf("expected the tilde expanded to the home directory, got %q", dir)
+	}
+}
+
+func TestSessionDataDirLeavesEmbeddedTildeAlone(t *testing.T) {
+	cfg := &Config{DataDir: "/srv/~backup/pane"}
+
+	dir, err := cfg.SessionDataDir()
+	if err != nil {
+		t.Fatalf("resolving data dir: %v", err)
+	}
+	if dir != "/srv/~backup/pane" {
+		t.Fatalf("expected the path untouched, got %q", dir)
+	}
+}
+
+func TestSessionDataDirDefaultsToXDGDataHome(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "/xdg/data")
+	cfg := &Config{}
+
+	dir, err := cfg.SessionDataDir()
+	if err != nil {
+		t.Fatalf("resolving data dir: %v", err)
+	}
+	if dir != filepath.Join("/xdg/data", "pane") {
+		t.Fatalf("expected the XDG data home, got %q", dir)
+	}
+}
+
+func TestSessionDataDirDefaultsToLocalShare(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home directory: %v", err)
+	}
+	cfg := &Config{}
+
+	dir, err := cfg.SessionDataDir()
+	if err != nil {
+		t.Fatalf("resolving data dir: %v", err)
+	}
+	if dir != filepath.Join(home, ".local", "share", "pane") {
+		t.Fatalf("expected the local share default, got %q", dir)
+	}
+}
+
+func TestLoadAcceptsDataDir(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "xdg"))
+	t.Chdir(tmp)
+
+	path := filepath.Join(tmp, "pane.yaml")
+	if err := os.WriteFile(path, []byte("data_dir: /srv/pane/data\n"), 0o600); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("loading config: %v", err)
+	}
+	if cfg.DataDir != "/srv/pane/data" {
+		t.Fatalf("expected data_dir bound from yaml, got %q", cfg.DataDir)
+	}
+}

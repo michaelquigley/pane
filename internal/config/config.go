@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/michaelquigley/df/dd"
@@ -19,6 +20,7 @@ type Config struct {
 	ContextWindows       map[string]int
 	DefaultContextWindow int
 	IncludeUsage         bool
+	DataDir              string
 	MCP                  *MCPConfig
 }
 
@@ -107,6 +109,40 @@ func mergeIfExists(cfg *Config, path string) error {
 		return err
 	}
 	return nil
+}
+
+// SessionDataDir resolves the directory the session store lives under: the
+// configured DataDir when set, else $XDG_DATA_HOME/pane, else
+// ~/.local/share/pane. a leading '~' in the configured value expands to the
+// user's home directory, so the documented example works as written.
+func (c *Config) SessionDataDir() (string, error) {
+	if c.DataDir != "" {
+		return expandHome(c.DataDir)
+	}
+	if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+		return filepath.Join(xdg, "pane"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolving home directory: %w", err)
+	}
+	return filepath.Join(home, ".local", "share", "pane"), nil
+}
+
+// expandHome expands a leading '~' path element to the user's home directory.
+// a '~' that is not its own path element (as in '~other/dir') is left alone.
+func expandHome(path string) (string, error) {
+	if path != "~" && !strings.HasPrefix(path, "~/") {
+		return path, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("expanding '%s': %w", path, err)
+	}
+	if path == "~" {
+		return home, nil
+	}
+	return filepath.Join(home, path[2:]), nil
 }
 
 func globalConfigPath() string {

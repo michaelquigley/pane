@@ -16,6 +16,7 @@ import (
 	"github.com/michaelquigley/pane/internal/config"
 	"github.com/michaelquigley/pane/internal/llm"
 	"github.com/michaelquigley/pane/internal/mcp"
+	"github.com/michaelquigley/pane/internal/session"
 	"github.com/michaelquigley/pane/ui"
 	"github.com/spf13/cobra"
 )
@@ -48,6 +49,17 @@ func run(_ *cobra.Command, _ []string) {
 
 	dl.Debugf("config: endpoint=%s model=%s listen=%s", cfg.Endpoint, cfg.Model, cfg.Listen)
 
+	dataDir, err := cfg.SessionDataDir()
+	if err != nil {
+		dl.Fatalf("session store: %v", err)
+	}
+	sessionDir := filepath.Join(dataDir, "sessions")
+	sessions, err := session.NewStore(sessionDir)
+	if err != nil {
+		dl.Fatalf("session store: %v", err)
+	}
+	dl.Infof("session store: '%s'", sessionDir)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -58,7 +70,7 @@ func run(_ *cobra.Command, _ []string) {
 	mcpMgr.Start(ctx)
 
 	llmClient := llm.NewClient(cfg.Endpoint, cfg.Model, cfg.ApiKey, cfg.IncludeUsage)
-	a := api.NewAPI(cfg, llmClient, mcpMgr)
+	a := api.NewAPI(cfg, llmClient, mcpMgr, sessions)
 
 	mux := http.NewServeMux()
 	a.RegisterRoutes(mux)

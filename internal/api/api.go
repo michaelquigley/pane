@@ -7,12 +7,14 @@ import (
 	"github.com/michaelquigley/pane/internal/config"
 	"github.com/michaelquigley/pane/internal/llm"
 	"github.com/michaelquigley/pane/internal/mcp"
+	"github.com/michaelquigley/pane/internal/session"
 )
 
 type API struct {
 	cfg       *config.Config
 	llm       *llm.Client
 	mcp       *mcp.Manager
+	sessions  *session.Store
 	approvals *ApprovalRegistry
 }
 
@@ -28,11 +30,12 @@ type configResponse struct {
 	DefaultContextWindow int            `dd:",+omitempty"`
 }
 
-func NewAPI(cfg *config.Config, llmClient *llm.Client, mcpMgr *mcp.Manager) *API {
+func NewAPI(cfg *config.Config, llmClient *llm.Client, mcpMgr *mcp.Manager, sessions *session.Store) *API {
 	return &API{
 		cfg:       cfg,
 		llm:       llmClient,
 		mcp:       mcpMgr,
+		sessions:  sessions,
 		approvals: NewApprovalRegistry(),
 	}
 }
@@ -44,6 +47,10 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/chat", a.handleChat)
 	mux.HandleFunc("GET /api/tools", a.handleTools)
 	mux.HandleFunc("POST /api/tools/approve", a.handleApprove)
+	mux.HandleFunc("GET /api/sessions", a.handleListSessions)
+	mux.HandleFunc("GET /api/sessions/{id}", a.handleGetSession)
+	mux.HandleFunc("PUT /api/sessions/{id}", a.handleSaveSession)
+	mux.HandleFunc("DELETE /api/sessions/{id}", a.handleDeleteSession)
 }
 
 func (a *API) handleHealth(w http.ResponseWriter, _ *http.Request) {
