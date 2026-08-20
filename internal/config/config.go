@@ -19,6 +19,8 @@ type Config struct {
 	Listen               string
 	ContextWindows       map[string]int
 	DefaultContextWindow int
+	MaxTokens            map[string]int
+	DefaultMaxTokens     int
 	IncludeUsage         bool
 	DataDir              string
 	MCP                  *MCPConfig

@@ -119,7 +119,7 @@ request body — the frontend sends the full conversation history every time. th
 }
 ```
 
-the `messages` array uses standard OpenAI chat format, including any tool call/result pairs from prior turns. the system prompt is resolved server-side from `system_prompt_mode`: `default` uses the configured system prompt, `custom` uses the request's `system_prompt`, and `none` sends no system message at all.
+the `messages` array uses standard OpenAI chat format, including any tool call/result pairs from prior turns. before the first request, the backend drops any assistant message that carries neither content nor tool calls: strict providers reject such a message ("must have content or tool_calls"), and one can reach the stored history when a turn ends without the model producing anything. dropping it is lossless, and it keeps a conversation whose history was poisoned that way usable. the system prompt is resolved server-side from `system_prompt_mode`: `default` uses the configured system prompt, `custom` uses the request's `system_prompt`, and `none` sends no system message at all.
 
 response — SSE stream. `Content-Type: text/event-stream`.
 
@@ -301,6 +301,7 @@ data: {"code": "upstream_unreachable", "message": "connection refused"}
 |---|---|
 | `upstream_unreachable` | can't connect to llm-gateway |
 | `upstream_error` | llm-gateway returned an HTTP error or the stream broke mid-response |
+| `empty_response` | the stream completed but the model produced neither content nor tool calls — nothing was committed for the round. when the model spent its whole output budget thinking before producing anything, the message says so (a backend budget problem to fix, not a model failure) |
 | `repeated_tool_failure` | the model kept calling tools after the loop forced a final answer |
 | `max_iterations` | tool call loop exceeded the iteration cap |
 
@@ -574,6 +575,14 @@ listen: 127.0.0.1:8400
 #  qwen2.5:14b: 32768
 #default_context_window: 128000
 
+# completion (output) token cap per model id. models with no entry and no
+# default use the backend's own output budget. thinking models need one:
+# their reasoning consumes the output budget before the answer is produced,
+# so a small budget ends the turn with nothing but a token-limit error.
+#max_tokens:
+#  qwen3.8-27b: 24756
+#default_max_tokens: 0
+
 # ask the upstream for token usage on every request (default true).
 # set false for an endpoint that rejects the stream_options field.
 #include_usage: false
@@ -602,6 +611,8 @@ mcp:
 the config cascade, lowest to highest priority: compiled defaults → `~/.config/pane/config.yaml` → `./pane.yaml` → `--config` flag. loading uses `dd.MergeYAMLFile` (`internal/config/config.go`).
 
 `data_dir` is where the session store lives. it resolves to the configured value when set — a leading `~` expanding to the user's home directory — else `$XDG_DATA_HOME/pane`, else `~/.local/share/pane`; the documents sit in a `sessions/` subdirectory under it, leaving room for future disk data in the same home. the store is always on and has no other setting, so `/api/config` reports nothing about it.
+
+`max_tokens` (per model id) and `default_max_tokens` set the completion token cap the backend sends upstream, like `include_usage` a backend-side request knob rather than a frontend setting. a model with no entry and no default sends no `max_tokens` field, so the backend's own output budget applies. thinking models need a generous cap: the model's reasoning consumes the output budget before any answer or tool call is produced, so a small budget ends the turn with an `empty_response` error after the model has thought for a while and said nothing.
 
 ## dependencies
 
@@ -644,6 +655,7 @@ the key principle: tool errors are not stream errors. when a tool fails, pane in
 |---|---|---|
 | connection refused | emit `event: error` with `code: upstream_unreachable`, close stream | error shown in conversation |
 | HTTP 4xx/5xx or stream interrupted | emit `event: error` with `code: upstream_error`, close stream | streaming content preserved, error appended |
+| stream completes with an empty completion (no content, no tool calls) | emit `event: error` with `code: empty_response`, close stream; the message names the cause when the model hit its output token limit while thinking, and the empty round is not committed, so the history stays clean. the fix is a bigger output budget: the backend's default, or pane's `max_tokens` setting for the model | error shown in conversation |
 | malformed SSE from gateway | log warning, skip malformed chunk, continue | invisible to user unless it corrupts the response |
 
 ### frontend failures

@@ -36,7 +36,7 @@ func (a *API) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	tools := a.mcp.GetEnabledTools()
 
-	if err := llm.RunToolLoop(r.Context(), a.llm, req.Messages, model, tools, a.mcp, sw, a.approvals); err != nil {
+	if err := llm.RunToolLoop(r.Context(), a.llm, req.Messages, model, resolveMaxTokens(model, a.cfg), tools, a.mcp, sw, a.approvals); err != nil {
 		dl.Errorf("tool loop: %v", err)
 	}
 }
@@ -46,6 +46,16 @@ func resolveModel(override string, cfg *config.Config) string {
 		return cfg.Model
 	}
 	return override
+}
+
+// resolveMaxTokens picks the output token cap for the resolved model: the
+// per-model value when configured, else the default. zero means the
+// backend's own output budget applies, so the field is left off the request.
+func resolveMaxTokens(model string, cfg *config.Config) int {
+	if cap, ok := cfg.MaxTokens[model]; ok {
+		return cap
+	}
+	return cfg.DefaultMaxTokens
 }
 
 func resolveSystemPrompt(req chatRequest, cfg *config.Config) string {

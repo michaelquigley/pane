@@ -172,6 +172,7 @@ func TestRunToolLoopStreamsThinkingDeltasAndKeepsResentHistoryClean(t *testing.T
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
 		"test-model",
+		0,
 		[]Tool{{
 			Type: "function",
 			Function: &FunctionDef{
@@ -334,6 +335,7 @@ func TestRunToolLoopEmitsRoundCompletePerIteration(t *testing.T) {
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
 		"test-model",
+		0,
 		[]Tool{{
 			Type: "function",
 			Function: &FunctionDef{
@@ -498,6 +500,7 @@ func TestRunToolLoopEmitsIndexedToolEventsForFragmentedMetadata(t *testing.T) {
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
 		"test-model",
+		0,
 		[]Tool{{
 			Type: "function",
 			Function: &FunctionDef{
@@ -651,6 +654,7 @@ func TestRunToolLoopEmitsIndexedToolEventsForInterleavedToolCalls(t *testing.T) 
 		client,
 		[]Message{{Role: "user", Content: StringContent("run both tools")}},
 		"test-model",
+		0,
 		[]Tool{
 			{
 				Type: "function",
@@ -772,6 +776,7 @@ func TestRunToolLoopSynthesizesIDsForMissingUpstreamToolCallIDs(t *testing.T) {
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
 		"test-model",
+		0,
 		[]Tool{{
 			Type: "function",
 			Function: &FunctionDef{
@@ -896,6 +901,7 @@ func TestRunToolLoopAssignsDistinctIDsForDuplicateUpstreamToolCallIDs(t *testing
 		client,
 		[]Message{{Role: "user", Content: StringContent("run both tools")}},
 		"test-model",
+		0,
 		[]Tool{
 			{
 				Type: "function",
@@ -1014,6 +1020,7 @@ func TestRunToolLoopUsesCanonicalIDForApprovalWithoutUpstreamID(t *testing.T) {
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
 		"test-model",
+		0,
 		[]Tool{{
 			Type: "function",
 			Function: &FunctionDef{
@@ -1099,6 +1106,7 @@ func TestRunToolLoopForcesFinalAnswerAfterRepeatedExecutionError(t *testing.T) {
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
 		"test-model",
+		0,
 		[]Tool{{
 			Type: "function",
 			Function: &FunctionDef{
@@ -1183,6 +1191,7 @@ func TestRunToolLoopForcesFinalAnswerAfterRepeatedDeniedApproval(t *testing.T) {
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
 		"test-model",
+		0,
 		[]Tool{{
 			Type: "function",
 			Function: &FunctionDef{
@@ -1267,6 +1276,7 @@ func TestRunToolLoopForcesFinalAnswerAfterRepeatedMalformedArguments(t *testing.
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
 		"test-model",
+		0,
 		[]Tool{{
 			Type: "function",
 			Function: &FunctionDef{
@@ -1353,6 +1363,7 @@ func TestRunToolLoopNormalizesRepeatedFailureArguments(t *testing.T) {
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
 		"test-model",
+		0,
 		[]Tool{{
 			Type: "function",
 			Function: &FunctionDef{
@@ -1409,6 +1420,7 @@ func TestRunToolLoopErrorsIfForcedFinalReturnsToolCalls(t *testing.T) {
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
 		"test-model",
+		0,
 		[]Tool{{
 			Type: "function",
 			Function: &FunctionDef{
@@ -1486,6 +1498,7 @@ func TestRunToolLoopEmitsRoundCompleteForNoToolResponses(t *testing.T) {
 		client,
 		[]Message{{Role: "user", Content: StringContent("hello")}},
 		"test-model",
+		0,
 		nil,
 		testExecutor{},
 		sw,
@@ -1539,6 +1552,7 @@ func TestRunToolLoopErrorsOnUpstreamEOFBeforeDone(t *testing.T) {
 		client,
 		[]Message{{Role: "user", Content: StringContent("hello")}},
 		"test-model",
+		0,
 		nil,
 		testExecutor{},
 		sw,
@@ -1598,6 +1612,7 @@ func TestRunToolLoopDoesNotExecuteToolsAfterUpstreamEOFBeforeDone(t *testing.T) 
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
 		"test-model",
+		0,
 		[]Tool{{
 			Type: "function",
 			Function: &FunctionDef{
@@ -1654,6 +1669,7 @@ func TestRunToolLoopEmitsUsageBeforeRoundComplete(t *testing.T) {
 		client,
 		[]Message{{Role: "user", Content: StringContent("say hello")}},
 		"test-model",
+		0,
 		nil,
 		testExecutor{},
 		sw,
@@ -1697,6 +1713,7 @@ func TestRunToolLoopEmitsDeltaBeforeUsageOnCombinedChunk(t *testing.T) {
 		client,
 		[]Message{{Role: "user", Content: StringContent("finish")}},
 		"test-model",
+		0,
 		nil,
 		testExecutor{},
 		sw,
@@ -1759,6 +1776,7 @@ func TestRunToolLoopEmitsOneUsageEventPerRound(t *testing.T) {
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
 		"test-model",
+		0,
 		[]Tool{{
 			Type: "function",
 			Function: &FunctionDef{
@@ -1884,6 +1902,7 @@ func TestRunToolLoopOmitsStreamOptionsWhenUsageDisabled(t *testing.T) {
 		client,
 		[]Message{{Role: "user", Content: StringContent("finish")}},
 		"test-model",
+		0,
 		nil,
 		testExecutor{},
 		sw,
@@ -1925,6 +1944,7 @@ func TestRunToolLoopKeepsNoUsageStreamSequenceUnchanged(t *testing.T) {
 		client,
 		[]Message{{Role: "user", Content: StringContent("finish")}},
 		"test-model",
+		0,
 		nil,
 		testExecutor{},
 		sw,
@@ -1952,6 +1972,7 @@ func runUsageRequestBodyLoop(t *testing.T, client *Client) error {
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
 		"test-model",
+		0,
 		[]Tool{{
 			Type: "function",
 			Function: &FunctionDef{
@@ -2004,7 +2025,7 @@ func TestExecuteSingleToolReturnsStructuredOutcomes(t *testing.T) {
 			approvals:  &testApprovalRegistry{ch: bufferedApproval(false)},
 			wantStatus: toolCallStatusError,
 			wantCode:   toolCallErrorDenied,
-			wantText:   "Tool call denied by user",
+			wantText:   "tool call denied by user",
 		},
 		{
 			name: "cancelled",
@@ -2023,7 +2044,7 @@ func TestExecuteSingleToolReturnsStructuredOutcomes(t *testing.T) {
 			approvals:  &testApprovalRegistry{ch: make(chan bool)},
 			wantStatus: toolCallStatusError,
 			wantCode:   toolCallErrorCancelled,
-			wantText:   "Request cancelled",
+			wantText:   "request cancelled",
 		},
 		{
 			name: "malformed arguments",
@@ -2037,7 +2058,7 @@ func TestExecuteSingleToolReturnsStructuredOutcomes(t *testing.T) {
 			executor:   testExecutor{},
 			wantStatus: toolCallStatusError,
 			wantCode:   toolCallErrorMalformedArguments,
-			wantText:   "Error: malformed arguments:",
+			wantText:   "error: malformed arguments:",
 		},
 		{
 			name: "execution error",
@@ -2051,7 +2072,7 @@ func TestExecuteSingleToolReturnsStructuredOutcomes(t *testing.T) {
 			executor:   testExecutor{duration: 11 * time.Millisecond, err: errors.New("boom")},
 			wantStatus: toolCallStatusError,
 			wantCode:   toolCallErrorExecution,
-			wantText:   "Error: boom",
+			wantText:   "error: boom",
 		},
 	}
 
@@ -2256,4 +2277,234 @@ func newTestSSEWriter(t *testing.T) *sse.Writer {
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 	return sw
+}
+
+func TestRunToolLoopReportsEmptyCompletionWithoutCommitting(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		// the stream completes cleanly, but the model produced neither
+		// content nor tool calls
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-model", "", true)
+	recorder := httptest.NewRecorder()
+	sw, err := sse.NewWriter(recorder)
+	if err != nil {
+		t.Fatalf("creating SSE writer: %v", err)
+	}
+
+	err = RunToolLoop(
+		context.Background(),
+		client,
+		[]Message{{Role: "user", Content: StringContent("hello")}},
+		"test-model",
+		0,
+		nil,
+		testExecutor{},
+		sw,
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected an error for an empty completion, got nil")
+	}
+
+	events := parseRecordedEvents(t, recorder.Body.String())
+	assertEventTypes(t, events, "error")
+
+	var payload sse.ErrorData
+	if err := json.Unmarshal(events[0].Data, &payload); err != nil {
+		t.Fatalf("unmarshaling error event: %v", err)
+	}
+	if payload.Code != "empty_response" {
+		t.Fatalf("expected error code 'empty_response', got '%s'", payload.Code)
+	}
+}
+
+func TestRunToolLoopDropsEmptyAssistantMessagesFromHistory(t *testing.T) {
+	t.Parallel()
+
+	var request ChatRequest
+	var requestOnce sync.Once
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestOnce.Do(func() {
+			request = decodeChatRequest(t, r)
+		})
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		writeStreamChunk(t, w, StreamChunk{
+			ID: "chat-1",
+			Choices: []Choice{{
+				Index: 0,
+				Delta: Delta{
+					Content: StringContent("here you go"),
+				},
+			}},
+		})
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-model", "", true)
+	recorder := httptest.NewRecorder()
+	sw, err := sse.NewWriter(recorder)
+	if err != nil {
+		t.Fatalf("creating SSE writer: %v", err)
+	}
+
+	err = RunToolLoop(
+		context.Background(),
+		client,
+		[]Message{
+			{Role: "user", Content: StringContent("first")},
+			{Role: "assistant"}, // empty: no content, no tool calls
+			{Role: "user", Content: StringContent("second")},
+		},
+		"test-model",
+		0,
+		nil,
+		testExecutor{},
+		sw,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("running tool loop: %v", err)
+	}
+
+	var roles []string
+	for _, message := range request.Messages {
+		roles = append(roles, message.Role)
+	}
+	want := []string{"user", "user"}
+	if len(roles) != len(want) {
+		t.Fatalf("expected %v in the upstream request, got %v", want, roles)
+	}
+	for idx := range roles {
+		if roles[idx] != want[idx] {
+			t.Fatalf("expected %v in the upstream request, got %v", want, roles)
+		}
+	}
+
+	// the turn still completes normally
+	events := parseRecordedEvents(t, recorder.Body.String())
+	assertEventTypes(t, events, "delta", "round_complete", "done")
+}
+
+func TestRunToolLoopDiagnosesTokenLimitWhileThinking(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		// the model streams thinking tokens the whole turn, then the
+		// backend ends the completion at the output token cap with no
+		// content and no tool calls
+		writeRawStreamData(t, w, `{"id":"chat-1","choices":[{"index":0,"delta":{"reasoning_content":"weighing the options"}}]}`)
+		writeRawStreamData(t, w, `{"id":"chat-1","choices":[{"index":0,"delta":{"reasoning":"still weighing"},"finish_reason":"length"}]}`)
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-model", "", true)
+	recorder := httptest.NewRecorder()
+	sw, err := sse.NewWriter(recorder)
+	if err != nil {
+		t.Fatalf("creating SSE writer: %v", err)
+	}
+
+	err = RunToolLoop(
+		context.Background(),
+		client,
+		[]Message{{Role: "user", Content: StringContent("think hard")}},
+		"test-model",
+		0,
+		nil,
+		testExecutor{},
+		sw,
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected an error for a completion truncated at the token limit, got nil")
+	}
+
+	events := parseRecordedEvents(t, recorder.Body.String())
+	assertEventTypes(t, events, "thinking_delta", "thinking_delta", "error")
+
+	var payload sse.ErrorData
+	if err := json.Unmarshal(events[2].Data, &payload); err != nil {
+		t.Fatalf("unmarshaling error event: %v", err)
+	}
+	if payload.Code != "empty_response" {
+		t.Fatalf("expected error code 'empty_response', got '%s'", payload.Code)
+	}
+	if !strings.Contains(payload.Message, "output token limit") {
+		t.Fatalf("error message should name the token limit, got: %s", payload.Message)
+	}
+	if !strings.Contains(payload.Message, "thinking") {
+		t.Fatalf("error message should name the thinking budget, got: %s", payload.Message)
+	}
+}
+
+func TestRunToolLoopSendsMaxTokensOnlyWhenSet(t *testing.T) {
+	t.Parallel()
+
+	newServer := func(capture *string) *httptest.Server {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatalf("reading request body: %v", err)
+			}
+			*capture = string(body)
+
+			w.Header().Set("Content-Type", "text/event-stream")
+			writeStreamChunk(t, w, StreamChunk{
+				ID: "chat-1",
+				Choices: []Choice{{
+					Index: 0,
+					Delta: Delta{
+						Content: StringContent("ok"),
+					},
+				}},
+			})
+			fmt.Fprint(w, "data: [DONE]\n\n")
+		}))
+		t.Cleanup(server.Close)
+		return server
+	}
+
+	run := func(server *httptest.Server, maxTokens int, capture *string) {
+		client := NewClient(server.URL, "test-model", "", true)
+		recorder := httptest.NewRecorder()
+		sw, err := sse.NewWriter(recorder)
+		if err != nil {
+			t.Fatalf("creating SSE writer: %v", err)
+		}
+		if err := RunToolLoop(
+			context.Background(),
+			client,
+			[]Message{{Role: "user", Content: StringContent("hi")}},
+			"test-model",
+			maxTokens,
+			nil,
+			testExecutor{},
+			sw,
+			nil,
+		); err != nil {
+			t.Fatalf("running tool loop: %v", err)
+		}
+	}
+
+	var withCap, withoutCap string
+	run(newServer(&withCap), 24756, &withCap)
+	if !strings.Contains(withCap, `"max_tokens":24756`) {
+		t.Fatalf("request with a configured cap should send max_tokens, body: %s", withCap)
+	}
+
+	run(newServer(&withoutCap), 0, &withoutCap)
+	if strings.Contains(withoutCap, "max_tokens") {
+		t.Fatalf("request without a configured cap should omit max_tokens, body: %s", withoutCap)
+	}
 }

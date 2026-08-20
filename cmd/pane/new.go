@@ -36,6 +36,14 @@ listen: 127.0.0.1:8400
 #  qwen2.5:14b: 32768
 #default_context_window: 128000
 
+# completion (output) token cap per model id. models with no entry and no
+# default use the backend's own output budget. thinking models need one:
+# their reasoning consumes the output budget before the answer is produced,
+# so a small budget ends the turn with nothing but a token-limit error.
+#max_tokens:
+#  qwen3.8-27b: 24756
+#default_max_tokens: 0
+
 # ask the upstream for token usage on every request (default true).
 # set false for an endpoint that rejects the stream_options field.
 #include_usage: false

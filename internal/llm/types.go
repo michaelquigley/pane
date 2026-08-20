@@ -9,6 +9,7 @@ type ChatRequest struct {
 	Tools         []Tool         `json:"tools,omitempty"`
 	Stream        bool           `json:"stream"`
 	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
+	MaxTokens     int            `json:"max_tokens,omitempty"`
 }
 
 type StreamOptions struct {

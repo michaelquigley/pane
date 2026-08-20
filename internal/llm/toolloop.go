@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"slices"
@@ -144,6 +145,7 @@ func RunToolLoop(
 	client *Client,
 	messages []Message,
 	model string,
+	maxTokens int,
 	tools []Tool,
 	executor ToolExecutor,
 	sw *sse.Writer,
@@ -151,6 +153,13 @@ func RunToolLoop(
 ) error {
 	failures := newToolFailureTracker()
 	forceFinalResponse := false
+
+	// the history arrives from the browser (and, after an earlier round, from
+	// this loop). drop any assistant message that says nothing -- carries no
+	// content and no tool calls: strict providers reject it on the wire, and
+	// an interrupted or empty-completing turn can leave one in stored history.
+	// dropping it is lossless and unsticks the conversation.
+	messages = dropEmptyAssistants(messages)
 
 	for iteration := 0; iteration < maxToolLoopIterations || forceFinalResponse; iteration++ {
 		if ctx.Err() != nil {
@@ -170,8 +179,9 @@ func RunToolLoop(
 		}
 
 		req := &ChatRequest{
-			Model:    model,
-			Messages: requestMessages,
+			Model:     model,
+			Messages:  requestMessages,
+			MaxTokens: maxTokens,
 		}
 		if len(tools) > 0 && !forcedFinalRequest {
 			req.Tools = tools
@@ -192,6 +202,8 @@ func RunToolLoop(
 		pending := make(map[int]*pendingToolCall)
 		var streamErr error
 		sawToolCallDelta := false
+		sawThinkingDelta := false
+		var finishReason string
 
 		for {
 			chunk, err := stream.Recv()
@@ -206,6 +218,12 @@ func RunToolLoop(
 			if len(chunk.Choices) > 0 {
 				delta := chunk.Choices[0].Delta
 
+				// the last non-empty finish reason the stream reported: it is
+				// what separates a truncated completion from a clean one
+				if chunk.Choices[0].FinishReason != nil && *chunk.Choices[0].FinishReason != "" {
+					finishReason = *chunk.Choices[0].FinishReason
+				}
+
 				// content tokens
 				if delta.Content != nil && *delta.Content != "" {
 					contentBuf.WriteString(*delta.Content)
@@ -215,6 +233,7 @@ func RunToolLoop(
 				// thinking tokens: pass-through only. llm.Message carries no
 				// reasoning field, so the re-sent history never echoes them.
 				if delta.Reasoning != nil && *delta.Reasoning != "" {
+					sawThinkingDelta = true
 					_ = sw.Send("thinking_delta", sse.ThinkingDeltaData{Content: *delta.Reasoning})
 				}
 
@@ -286,12 +305,34 @@ func RunToolLoop(
 			}
 		}
 
+		// a round that produced neither content nor tool calls is a failure,
+		// not a success: committing the empty assistant message would poison
+		// the history -- strict providers reject it on the next request -- so
+		// report the empty completion and commit nothing. the finish reason
+		// separates the two causes: 'length' means the model spent its whole
+		// output budget (thinking, for reasoning models) before producing
+		// anything, which is a backend budget problem the operator can fix;
+		// anything else is a genuinely empty response.
+		content := contentBuf.String()
+		if content == "" && len(pending) == 0 {
+			message := "upstream returned an empty response: no content and no tool calls"
+			if finishReason == "length" {
+				message = "the model reached its output token limit before producing any content or tool calls"
+				if sawThinkingDelta {
+					message += " -- it spent the whole budget thinking. raise the backend's output token cap (or the model's thinking budget) and retry"
+				}
+			}
+			err := errors.New(message)
+			dl.Errorf("iteration %d: %v", iteration, err)
+			_ = sw.Send("error", sse.ErrorData{Code: "empty_response", Message: err.Error()})
+			return err
+		}
+
 		// build the assistant message
 		assistantMsg := Message{
 			Role: "assistant",
 		}
 
-		content := contentBuf.String()
 		if content != "" {
 			assistantMsg.Content = &content
 		}
@@ -373,6 +414,24 @@ func RunToolLoop(
 	return fmt.Errorf("tool call loop exceeded %d iterations", maxToolLoopIterations)
 }
 
+// dropEmptyAssistants removes assistant messages that carry neither content
+// nor tool calls. it runs once, over the browser-supplied history, before the
+// first upstream request: the loop itself only ever appends assistant
+// messages that passed the empty-completion check, so a second pass would be
+// dead code.
+func dropEmptyAssistants(messages []Message) []Message {
+	kept := make([]Message, 0, len(messages))
+	for _, message := range messages {
+		if message.Role == "assistant" && len(message.ToolCalls) == 0 &&
+			(message.Content == nil || *message.Content == "") {
+			dl.Debugf("dropping empty assistant message from request history")
+			continue
+		}
+		kept = append(kept, message)
+	}
+	return kept
+}
+
 func executeSingleTool(
 	ctx context.Context,
 	p *pendingToolCall,
@@ -397,20 +456,20 @@ func executeSingleTool(
 			case approved := <-ch:
 				if !approved {
 					return toolCallResult{
-						Content:   "Tool call denied by user",
+						Content:   "tool call denied by user",
 						Status:    toolCallStatusError,
 						ErrorCode: toolCallErrorDenied,
 					}
 				}
 			case <-time.After(5 * time.Minute):
 				return toolCallResult{
-					Content:   "Tool call approval timed out",
+					Content:   "tool call approval timed out",
 					Status:    toolCallStatusError,
 					ErrorCode: toolCallErrorApprovalTimeout,
 				}
 			case <-ctx.Done():
 				return toolCallResult{
-					Content:   "Request cancelled",
+					Content:   "request cancelled",
 					Status:    toolCallStatusError,
 					ErrorCode: toolCallErrorCancelled,
 				}
@@ -430,7 +489,7 @@ func executeSingleTool(
 		if err := json.Unmarshal([]byte(p.Arguments), &args); err != nil {
 			dl.Warnf("malformed tool call arguments for %s: %v", p.Name, err)
 			return toolCallResult{
-				Content:   fmt.Sprintf("Error: malformed arguments: %v", err),
+				Content:   fmt.Sprintf("error: malformed arguments: %v", err),
 				Status:    toolCallStatusError,
 				ErrorCode: toolCallErrorMalformedArguments,
 			}
@@ -441,7 +500,7 @@ func executeSingleTool(
 	if err != nil {
 		dl.Warnf("tool call %s failed: %v", p.Name, err)
 		return toolCallResult{
-			Content:    fmt.Sprintf("Error: %v", err),
+			Content:    fmt.Sprintf("error: %v", err),
 			DurationMS: duration.Milliseconds(),
 			Status:     toolCallStatusError,
 			ErrorCode:  toolCallErrorExecution,

@@ -182,3 +182,26 @@ func TestLoadAcceptsDataDir(t *testing.T) {
 		t.Fatalf("expected data_dir bound from yaml, got %q", cfg.DataDir)
 	}
 }
+
+func TestLoadAcceptsMaxTokens(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "xdg"))
+	t.Chdir(tmp)
+
+	path := filepath.Join(tmp, "pane.yaml")
+	content := "max_tokens:\n  qwen3.8-27b: 24756\ndefault_max_tokens: 8192\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("loading config: %v", err)
+	}
+	if got := cfg.MaxTokens["qwen3.8-27b"]; got != 24756 {
+		t.Fatalf("expected per-model max_tokens 24756, got %d", got)
+	}
+	if cfg.DefaultMaxTokens != 8192 {
+		t.Fatalf("expected default_max_tokens 8192, got %d", cfg.DefaultMaxTokens)
+	}
+}

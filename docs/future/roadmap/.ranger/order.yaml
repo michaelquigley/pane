@@ -17,8 +17,8 @@ researching:
   - round-trip-reasoning-echo-in-re-sent-history.md
   - auto-compaction.md
 evaluating:
-building:
   - persistent-not-localstorage-sessions.md
+building:
 horizon:
   - frontend-tests-for-the-session-hook.md
   - local-token-estimation.md
