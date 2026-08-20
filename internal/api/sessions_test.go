@@ -248,3 +248,15 @@ func putSession(t *testing.T, server *httptest.Server, id, doc string) {
 		t.Fatalf("expected 204 saving '%s', got %d: %s", id, resp.StatusCode, readBody(t, resp))
 	}
 }
+
+func TestCollectionDeleteIsNotARoute(t *testing.T) {
+	server := newSessionsServer(t, t.TempDir())
+
+	// clear-all was removed from the design: the path is known to the list
+	// route, the method is not, so the mux answers 405 rather than sweeping
+	// the estate.
+	resp := do(t, server, "DELETE", "/api/sessions", "")
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", resp.StatusCode)
+	}
+}

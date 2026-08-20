@@ -1,4 +1,6 @@
 researching:
+  - write-only-tool-approval.md
+  - renameretitle-conversations.md
   - metawoo-branding.md
   - authentication.md
   - connection-indicator-on-the-toolbar.md
@@ -17,3 +19,6 @@ researching:
 evaluating:
 building:
   - persistent-not-localstorage-sessions.md
+horizon:
+  - frontend-tests-for-the-session-hook.md
+  - local-token-estimation.md

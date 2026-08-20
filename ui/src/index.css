@@ -839,6 +839,19 @@ body {
   margin: 8px 0 0;
 }
 
+/* the app's error line: the most recent failed store operation, or a failed
+   config fetch behind it. muted, no chrome, no dismiss control. */
+.app-notice {
+  max-width: var(--chat-width);
+  margin: 0 auto;
+  padding: 0 20px;
+  width: 100%;
+  color: var(--fg-muted);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
 /* Input area */
 .input-area {
   padding: 36px 20px 40px;
@@ -942,7 +955,12 @@ body {
   transition: background var(--transition);
 }
 
-.new-chat-btn:hover {
+.new-chat-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.new-chat-btn:hover:not(:disabled) {
   background: var(--accent-hover);
 }
 
@@ -994,24 +1012,6 @@ body {
 
 .conversation-delete:hover {
   color: var(--error);
-}
-
-.clear-all-btn {
-  margin: 12px;
-  padding: 8px 14px;
-  background: transparent;
-  color: var(--fg-muted);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  cursor: pointer;
-  font-family: var(--serif);
-  font-size: 0.75rem;
-  transition: all var(--transition);
-}
-
-.clear-all-btn:hover {
-  color: var(--error);
-  border-color: var(--error);
 }
 
 /* Tool panel */

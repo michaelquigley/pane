@@ -6,7 +6,7 @@ a thin pane of glass between a human and an LLM. Go binary with an embedded Reac
 
 see `README.md` for the user-facing overview. design docs land in `docs/` — `docs/current/` for built behavior, `docs/future/` for forward-looking specs. `docs/current/pane.md` holds the original design document.
 
-pane is a single-binary chat client that proxies to any OpenAI-compatible completions endpoint and spawns local MCP servers as child processes for tool use. conversations live in the browser (localStorage). the backend is stateless.
+pane is a single-binary chat client that proxies to any OpenAI-compatible completions endpoint and spawns local MCP servers as child processes for tool use. conversations live on disk as one opaque JSON file each under a configurable data directory; the browser holds a working copy and per-browser view state. the chat path stays stateless -- every `/api/chat` request carries the full history.
 
 ## tech stack
 
@@ -39,6 +39,8 @@ pane/
 │   ├── mcp/                    # MCP server lifecycle manager
 │   │   ├── manager.go          # spawn, init, discover, execute, stop
 │   │   └── tool.go             # ToolInfo, MCP-to-OpenAI translation, namespace
+│   ├── session/                # file-backed conversation store
+│   │   └── store.go            # Store, List/Get/Save/Delete, atomic writes, id safety
 │   ├── sse/                    # SSE event writer for pane's streaming protocol
 │   │   └── writer.go           # Writer, Send, event data types
 │   └── api/                    # HTTP API handlers
@@ -46,20 +48,23 @@ pane/
 │       ├── chat.go             # POST /api/chat (tool loop integration)
 │       ├── models.go           # GET /api/models
 │       ├── tools.go            # GET /api/tools
+│       ├── sessions.go         # /api/sessions CRUD handlers
 │       └── approve.go          # POST /api/tools/approve, ApprovalRegistry
 ├── ui/                         # frontend source + embed (zrok pattern)
 │   ├── embed.go                # //go:embed dist (build tag: !no_ui)
 │   ├── embed_stub.go           # empty FS (build tag: no_ui)
 │   ├── middleware.go           # SPA middleware: /api/ passthrough, index.html fallback
 │   └── src/
-│       ├── App.tsx             # top-level layout, conversation state (localStorage)
+│       ├── App.tsx             # top-level layout, the conversation surface
 │       ├── types.ts            # Conversation, Message, ToolCall, SSEEvent, etc.
 │       ├── lib/
 │       │   ├── sse.ts          # SSE stream parser (pane's protocol)
+│       │   ├── sessionStore.ts   # SessionStore interface + backend adapter
 │       │   └── exportMarkdown.ts # conversation-to-markdown export
 │       ├── hooks/
 │       │   ├── useChat.ts      # SSE streaming, tool call state machine, approvals
 │       │   ├── useConfig.ts    # GET /api/config
+│       │   ├── useSessions.ts  # the mirror hook: hydration, diff-mirror, serial chain
 │       │   ├── useLocalStorage.ts
 │       │   ├── useModels.ts    # GET /api/models
 │       │   └── useTools.ts     # GET /api/tools
@@ -87,7 +92,7 @@ pane/
 
 ## key design decisions
 
-1. **stateless backend** — the browser owns conversation state (localStorage). the backend is a proxy with MCP superpowers. every chat request includes the full message history.
+1. **stateless chat path, disk-backed record** — the backend owns the record (one opaque JSON file per conversation under `data_dir`, the id being the file's name and no field of the body) but keeps no in-memory conversation state: every `/api/chat` request includes the full message history, and the chat path never reads the store. the browser holds a working copy of the estate — state is the working truth, the store is its durable mirror, hydrated on load and persisted on change.
 
 2. **hand-rolled LLM client** — ~150 lines replacing go-openai. clean interfaces so a library can be swapped in later. supports streaming, tool calls, bearer token auth.
 
@@ -109,6 +114,10 @@ pane/
 | `/api/chat` | POST | chat completion with MCP tool loop, returns SSE stream |
 | `/api/tools` | GET | discovered MCP tools with server statuses |
 | `/api/tools/approve` | POST | approve/deny a pending tool call |
+| `/api/sessions` | GET | list stored conversation projections (updated descending, id ordinal-ascending) |
+| `/api/sessions/{id}` | GET | the session document's body, as stored |
+| `/api/sessions/{id}` | PUT | upsert the document under that id |
+| `/api/sessions/{id}` | DELETE | delete one conversation |
 
 ## SSE streaming protocol
 
@@ -123,6 +132,8 @@ config cascade (lowest to highest priority):
 4. `--config` flag
 
 loading uses `dd.MergeYAMLFile` with `dd.FileError` not-found handling. see `internal/config/config.go`.
+
+`data_dir` locates the session store: the configured value (a leading `~` expanding to home), else `$XDG_DATA_HOME/pane`, else `~/.local/share/pane`. documents live in a `sessions/` subdirectory under it. the store is always on and fails startup loudly if it cannot be created or written.
 
 ## commands
 

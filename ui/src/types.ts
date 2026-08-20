@@ -1,10 +1,30 @@
+// the session document: exactly what one file under the data directory
+// holds. there is no id field -- the id is the store's key, the file's name,
+// and every store operation takes it explicitly, so the in-memory and on-disk
+// shapes are identical and a round trip is byte-transparent.
 export interface Conversation {
-  id: string
   title: string
   messages: Message[]
   createdAt: number
   updatedAt: number
   usage?: UsageRecord | null
+}
+
+// the working copy's element: the store's key paired with the document it
+// addresses. the pairing is what keeps the id out of the body while leaving
+// it in hand for every save, remove, and selection find.
+export interface StoredConversation {
+  id: string
+  doc: Conversation
+}
+
+// the rail's projection of a stored conversation, as GET /api/sessions
+// reports it.
+export interface SessionSummary {
+  id: string
+  title: string
+  createdAt: number
+  updatedAt: number
 }
 
 export interface UsageRecord {

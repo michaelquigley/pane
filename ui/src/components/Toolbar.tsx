@@ -13,6 +13,7 @@ import type { ModelInfo, SystemPromptMode, UsageRecord } from '../types'
 interface Props {
   conversationsOpen: boolean
   onToggleConversations: () => void
+  canCreate: boolean
   onNew: () => void
   canExport: boolean
   onExport: () => void
@@ -41,6 +42,7 @@ interface Props {
 export function Toolbar({
   conversationsOpen,
   onToggleConversations,
+  canCreate,
   onNew,
   canExport,
   onExport,
@@ -76,6 +78,7 @@ export function Toolbar({
             title="new conversation"
             aria-label="new conversation"
             onClick={onNew}
+            disabled={!canCreate}
           >
             <AddBoxIcon />
           </button>

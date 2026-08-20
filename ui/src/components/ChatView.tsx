@@ -9,6 +9,8 @@ interface Props {
   streamingThinking: string
   activeToolCalls: Map<number, ActiveToolCall>
   error: string | null
+  appError: string | null
+  canSend: boolean
   onSend: (content: string) => void
   onRetry: () => void
   onApprove: (id: string) => void
@@ -24,6 +26,8 @@ export function ChatView({
   streamingThinking,
   activeToolCalls,
   error,
+  appError,
+  canSend,
   onSend,
   onRetry,
   onApprove,
@@ -57,7 +61,9 @@ export function ChatView({
   }
 
   const handleSend = () => {
-    if (!input.trim() || isStreaming) return
+    // the gate sits before the input clear, so a send refused by the session
+    // gate leaves the typed text where the reader left it.
+    if (!input.trim() || isStreaming || !canSend) return
     const content = input
     setInput('')
     onSend(content)
@@ -100,7 +106,8 @@ export function ChatView({
               {!isStreaming && (
                 <button
                   className="retry-btn"
-                  onClick={onRetry}
+                  onClick={() => { if (canSend) onRetry() }}
+                  disabled={!canSend}
                 >
                   Retry
                 </button>
@@ -111,6 +118,8 @@ export function ChatView({
           <div ref={bottomRef} />
         </div>
       </div>
+
+      {appError && <div className="app-notice">{appError}</div>}
 
       <div className="input-area">
         <textarea
@@ -132,7 +141,7 @@ export function ChatView({
           <button
             className="send-btn"
             onClick={handleSend}
-            disabled={!input.trim()}
+            disabled={!input.trim() || !canSend}
           >
             Send
           </button>
