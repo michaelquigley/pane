@@ -1,6 +1,6 @@
 ---
 title: local token estimation
-state: horizon
+state: inbox
 created: 2026-08-17
 tags: [feature]
 subsystems: [backend]

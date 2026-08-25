@@ -13,4 +13,4 @@ build it when the residual's hazard stops being theoretical: two tabs or machine
 
 ## why
 
-the persistent-sessions spec (built 2026-08, journal 2026-08-18) parks this on its deferred menu: in the arc's design session the operator weighed building the 409 path against the appliance's one-human posture and chose to park it, and the arc's round-2 review (mercurius session s_D4PFZHu8r0v4) raised the reader-clobber case that points at exactly this mechanism. the snapshot guard closes the within-client half; this card owns the cross-client one.
+the persistent-sessions arc (built 2026-08, journal 2026-08-18) parked this as a deferred item carried in `docs/current/pane.md`'s deferred list: in the arc's design session the operator weighed building the 409 path against the appliance's one-human posture and chose to park it, and the arc's round-2 review (mercurius session s_D4PFZHu8r0v4) raised the reader-clobber case that points at exactly this mechanism. the snapshot guard closes the within-client half; this card owns the cross-client one.
