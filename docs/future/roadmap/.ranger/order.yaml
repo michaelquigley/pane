@@ -1,6 +1,5 @@
 researching:
   - write-only-tool-approval.md
-  - renameretitle-conversations.md
   - metawoo-branding.md
   - authentication.md
   - connection-indicator-on-the-toolbar.md
@@ -18,6 +17,7 @@ researching:
   - auto-compaction.md
 evaluating:
 building:
+  - renameretitle-conversations.md
 horizon:
   - frontend-tests-for-the-session-hook.md
 inbox:

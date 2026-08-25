@@ -397,7 +397,7 @@ the shapes the frontend works with (`ui/src/types.ts`), abbreviated:
 // the session document: exactly what one file under the data directory
 // holds. no id field -- the id is the store's key, the file's name.
 interface Conversation {
-  title: string;           // first user message, truncated to 50 chars
+  title: string;           // derived from the first user message (50 chars), or a title the operator set; empty means no explicit title
   messages: Message[];
   createdAt: number;
   updatedAt: number;
@@ -514,7 +514,7 @@ three app-level guards ride on top:
 - **a read is not a write.** the commit effect holds a snapshot of the (messages, usage) references the last mirrored document carries, seeded when the sync effect loads a conversation and advanced on every commit. while chat's state is still those references it issues no write, so selecting or reloading a conversation re-stamps neither `updatedAt` nor the rail's order. both sides normalize the optional `usage` field identically, so a document that omits the key reads as unchanged either way.
 - **the session gate.** every session-mutating entry point — both new-conversation controls, send (button and enter), retry — is closed while hydration is incomplete or a delete of the active conversation is in flight. the controls render disabled, the handlers refuse, and the composer's gate sits before the input clear, so the typed text survives and the input stays editable. selection is closed during the destructive window too: the sync effect re-attaches commit ownership, so a selection made there could commit a save behind the in-flight delete and re-create the file after it.
 
-the rail renders in (updated descending, id ordinal-ascending) order — the same comparator the store's list applies, with the id compared as its `TextEncoder` bytes so screen order and disk order agree. a commit that stamps `updatedAt` moves the conversation to the top in the same render.
+the rail renders in (updated descending, id ordinal-ascending) order — the same comparator the store's list applies, with the id compared as its `TextEncoder` bytes so screen order and disk order agree. a commit that stamps `updatedAt` moves the conversation to the top in the same render. a rename is not activity: it changes only `title` and leaves `updatedAt` untouched, so a renamed conversation keeps its place in the rail.
 
 when a store operation fails, the app shows one quiet line near the composer holding the most recently failed operation's decoded message; the next successful store operation clears it. a failed `/api/config` fetch rides the same line behind it, persisting until reload since the binary it accuses sits behind the page. the ordering is fixed — the session error when present, otherwise the config error — so a persistent failure can never mask a live one.
 
@@ -528,7 +528,7 @@ the UI:
 - **context meter.** the readout in the bar's signal column. it compares the latest `prompt_tokens` measurement with the selected model's exact configured window, then shifts from cool below 50%, to warm from 50–80%, to hot at 80% and above. `?` names the distinct unknown state in its tooltip: no usage yet, a measurement from another model, or no configured window for the measured model.
 - **tool panel.** slide-out sidebar below the bar, opened from the toolbar's tools glyph (lit while open, wearing the tool count as a badge while the count is positive) showing discovered MCP tools and server statuses.
 - **system prompt.** the toolbar's description glyph — lit on the non-default modes — opens a modal holding the mode select (default/custom/none) and, for custom, the text. escape and outside click close it, returning focus to the glyph. mode and text persist in localStorage.
-- **conversation management.** new conversation and export as toolbar actions, the history rail — the working copy of the disk store — opened from the toolbar's conversations glyph, delete, markdown export. there is no clear-all: bulk-wiping the estate is the operator's file operation on the data directory.
+- **conversation management.** new conversation and export as toolbar actions, the history rail — the working copy of the disk store — opened from the toolbar's conversations glyph, rename, delete, markdown export. a pencil on a row swaps the title for an inline editor: enter commits, escape or blur cancels, and an empty title means no explicit title, so the title derived from the first user message applies again. there is no clear-all: bulk-wiping the estate is the operator's file operation on the data directory.
 
 no auth. no user management. no settings pages. no plugin system.
 

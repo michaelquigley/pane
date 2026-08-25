@@ -1014,6 +1014,49 @@ body {
   color: var(--error);
 }
 
+/* the rename pencil rides the delete mark's pattern: invisible at rest,
+   present on hover, and kept visible while its input holds focus so a
+   keyboard edit is never orphaned from its affordance */
+.conversation-rename {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 0 4px;
+  opacity: 0;
+  transition: opacity var(--transition);
+}
+
+.conversation-rename svg {
+  width: 14px;
+  height: 14px;
+}
+
+.conversation-item:hover .conversation-rename,
+.conversation-item:focus-within .conversation-rename {
+  opacity: 1;
+}
+
+.conversation-rename:hover {
+  color: var(--fg);
+}
+
+.conversation-title-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--serif);
+  font-size: 0.875rem;
+  padding: 2px 6px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  outline: none;
+}
+
 /* Tool panel */
 /* the panel is absolute inside the app-body row, so its top edge tracks the
    bar's rendered height — a wrapped, taller bar can never obscure its head */

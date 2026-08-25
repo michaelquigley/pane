@@ -1,5 +1,5 @@
 // shared control icons, drawn from Google's Material Symbols (Apache-2.0,
-// grade-500 weight). words travel in the consuming control's tooltip and
+// weight 500). words travel in the consuming control's tooltip and
 // aria label, never in the icon itself.
 
 function MaterialIcon({ d, size }: { d: string; size?: number }) {
@@ -24,7 +24,7 @@ export function AddBoxIcon() {
   );
 }
 
-// material symbols "forum"; the conversation rail. grade-500 path from the
+// material symbols "forum"; the conversation rail. weight-500 path from the
 // official material-design-icons set
 export function ForumIcon() {
   return (
@@ -32,7 +32,7 @@ export function ForumIcon() {
   );
 }
 
-// material symbols "upload"; the export action. grade-500 path from the
+// material symbols "upload"; the export action. weight-500 path from the
 // official material-design-icons set
 export function UploadIcon() {
   return (
@@ -40,7 +40,7 @@ export function UploadIcon() {
   );
 }
 
-// material symbols "psychology"; the model control's mark. grade-500 path
+// material symbols "psychology"; the model control's mark. weight-500 path
 // from the official material-design-icons set
 export function PsychologyIcon() {
   return (
@@ -57,9 +57,18 @@ export function DescriptionIcon() {
 }
 
 // material symbols "construction"; the tool panel's mark, wearing its count
-// as a badge. grade-500 path from the official material-design-icons set
+// as a badge. weight-500 path from the official material-design-icons set
 export function ConstructionIcon() {
   return (
     <MaterialIcon d="M759.11-111.87 537-333.98l89.02-89.26 222.11 222.11-89.02 89.26Zm-558.22 0-89.26-89.26 279.11-279.11-68.72-68.72-28 28-47.65-47.41v78.65l-29.67 29.68L88.76-587.98l29.67-29.67h78.66l-46.66-46.89 144.64-144.39q20.47-20.48 44.55-29.84t49.03-9.36q24.96 0 49.15 9.48 24.2 9.48 44.68 29.72l-93.44 93.19 49.76 49.76-28 28 68.96 68.96 89.76-89.76q-3.76-10.76-6.14-22.64T561-705.07q0-60.43 41.58-102.13 41.57-41.69 102.01-41.69 16.19 0 30.77 3.36 14.57 3.36 29.53 10.55l-99 99.24 69.37 69.37 99.24-99.24q8.2 14.72 11.29 29.53 3.1 14.82 3.1 31.01 0 60.44-41.93 102.02-41.94 41.57-102.37 41.57-11.76 0-23.41-2-11.64-2-22.4-6.52L200.89-111.87Z" />
+  );
+}
+
+// material symbols "edit"; the pencil on a rail row, the rename affordance.
+// weight-500 path from the official material-design-icons set (the variable
+// font's wght axis instantiated at 500, distinct from its grade axis)
+export function EditIcon() {
+  return (
+    <MaterialIcon d="M194.53-194.75L609.22-554.5L554.73-609.22L194.53-249.02ZM107.39-107.39L613.82-790.98Q625.79-802.23 640.4-808.22Q655.01-814.21 671.06-814.21Q686.88-814.21 701.97-808.22Q717.06-802.23 728.54-790.25L791.21-727.3Q803.19-716.06 808.81-700.85Q814.43-685.65 814.43-670.33Q814.43-654.28 808.81-639.56Q803.19-624.83 791.21-612.86L285.75-107.39ZM724.55-670.33 670.56-724.55ZM581.61-581.61 554.73-609.22 609.22-554.5Z" />
   );
 }

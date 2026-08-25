@@ -1,6 +1,6 @@
 ---
 title: rename/retitle conversations?
-state: researching
+state: building
 created: 2026-08-19
 tags: [feature]
 milestone: v0.1.x

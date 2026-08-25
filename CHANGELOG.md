@@ -16,6 +16,10 @@ FEATURE: Model thinking is now streamed and displayed. assistant messages that c
 
 FIX: pane no longer rejects post-tool-turn chat requests when an assistant tool-call message has explicit null content. `dd v1.0.3` and the field-level `+nullable` contract preserve the valid OpenAI message shape while keeping request binding in `dd`.
 
+FEATURE: `max_tokens` (per model id) and `default_max_tokens` set the completion token cap the backend sends upstream. a model with neither sends no cap, so the backend's own output budget applies. thinking models spend their output budget on reasoning before any answer is produced, so a small budget ends the turn empty: a stream that completes with no content and no tool call now surfaces as an `empty_response` error that names the token-limit cause, and the empty round is not committed, so the history stays clean.
+
+FEATURE: conversations can be renamed from the rail. a pencil on a row swaps the title for an inline editor — enter commits, escape or blur cancels — and an empty title means no explicit title, so the title derived from the first user message applies again. a rename is not activity: it does not re-stamp the conversation's last activity, so the row keeps its place in the rail.
+
 ## v0.1.0
 
 Initial release.

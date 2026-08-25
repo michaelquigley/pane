@@ -200,6 +200,17 @@ export default function App() {
     }
   }, [activeId, setConversations, setActiveId, setDestructive, removeConversation, chat])
 
+  const handleRenameConversation = useCallback((id: string, title: string) => {
+    // a rename enqueues a save; behind an in-flight delete of the same id it
+    // would re-create the file the delete just removed, the hazard the
+    // destructive fence exists for.
+    if (destructivePendingRef.current) return
+    // only the title moves: messages and usage keep their references, so the
+    // read-is-not-a-write snapshot still holds, and updatedAt is untouched —
+    // a rename is not activity, and the row keeps its place in the rail.
+    setConversations(prev => prev.map(c => c.id === id ? { ...c, doc: { ...c.doc, title } } : c))
+  }, [setConversations])
+
   const handleModelChange = useCallback((model: string) => {
     setPreferences(prev => ({
       ...prev,
@@ -310,6 +321,7 @@ export default function App() {
               onSelect={handleSelectConversation}
               onNew={handleNewConversation}
               onDelete={handleDeleteConversation}
+              onRename={handleRenameConversation}
             />
           </aside>
         )}
