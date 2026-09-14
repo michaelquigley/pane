@@ -1,6 +1,6 @@
 ---
 title: toolbar screen-reader announcer
-state: researching
+state: horizon
 created: 2026-08-17
 tags: [enhancement]
 subsystems: [frontend]

@@ -5,7 +5,6 @@ researching:
   - connection-indicator-on-the-toolbar.md
   - toolbar-stream-and-approval-signals.md
   - toolbar-settings-surface.md
-  - toolbar-screen-reader-announcer.md
   - server-assigned-session-versioning.md
   - per-model-thinking-control.md
   - camelcase-snakecase.md
@@ -16,10 +15,10 @@ researching:
   - round-trip-reasoning-echo-in-re-sent-history.md
   - auto-compaction.md
 evaluating:
-  - renameretitle-conversations.md
 building:
 horizon:
   - mermaid.md
   - frontend-tests-for-the-session-hook.md
+  - toolbar-screen-reader-announcer.md
 inbox:
   - local-token-estimation.md
