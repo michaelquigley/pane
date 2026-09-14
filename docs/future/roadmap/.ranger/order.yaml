@@ -19,6 +19,7 @@ evaluating:
   - renameretitle-conversations.md
 building:
 horizon:
+  - mermaid.md
   - frontend-tests-for-the-session-hook.md
 inbox:
   - local-token-estimation.md
