@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.1
+
 FEATURE: pane can now bind model aliases to explicit OpenAI-compatible connections. each registry entry can select its own endpoint, upstream model id, bearer key, context window, and output limit, while omitted endpoint and key values inherit the top-level connection. the configured aliases are the complete model list, chat rejects unknown aliases before streaming, and usage remains attached to the alias selected for that turn. configurations without a registry keep the original single-endpoint discovery behavior.
 
 FEATURE: conversations now live on disk rather than in the browser. the record is one JSON file per conversation under a configurable `data_dir` (default `~/.local/share/pane`, XDG-aware), written by the binary and served through a new `/api/sessions` surface, so a profile wipe, a reimage, or a switch of browsers no longer takes the work with it. the browser keeps a working copy of the record plus its own view state, and `/api/chat` is unchanged — it still carries the full history on every request. a data directory that cannot be written fails startup rather than serving an empty rail that pretends to remember; an ephemeral container that wants the record to outlive itself points `data_dir` at a mounted volume. conversations already sitting in a browser's localStorage are not imported — export them as markdown from the profile that holds them.
