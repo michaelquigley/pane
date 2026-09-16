@@ -18,20 +18,20 @@ import (
 func TestResolveModelUsesDefaultWhenOverrideIsBlank(t *testing.T) {
 	cfg := &config.Config{Model: "configured-model"}
 
-	got := resolveModel("", cfg)
+	got, ok := cfg.ResolveModel("")
 
-	if got != "configured-model" {
-		t.Fatalf("expected configured model, got %q", got)
+	if !ok || got.Alias != "configured-model" {
+		t.Fatalf("expected configured model, got %#v", got)
 	}
 }
 
 func TestResolveModelUsesOverrideWhenProvided(t *testing.T) {
 	cfg := &config.Config{Model: "configured-model"}
 
-	got := resolveModel("override-model", cfg)
+	got, ok := cfg.ResolveModel("override-model")
 
-	if got != "override-model" {
-		t.Fatalf("expected override model, got %q", got)
+	if !ok || got.Alias != "override-model" {
+		t.Fatalf("expected override model, got %#v", got)
 	}
 }
 

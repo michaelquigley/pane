@@ -6,10 +6,10 @@ single binary. embedded web UI. first-class MCP stdio support. no docker, no dat
 
 ## what it does
 
-- **chat.** a clean web interface for talking to any OpenAI-compatible completions endpoint. streaming responses, markdown rendering, syntax-highlighted code blocks, conversation history in the browser.
+- **chat.** a clean web interface for talking to OpenAI-compatible completions endpoints. configured model aliases can select different hosts, credentials, context windows, and output limits. responses stream into disk-backed conversations with markdown rendering and syntax-highlighted code blocks.
 - **tools.** spawns MCP servers as local child processes and wires their tools into the chat loop. the LLM calls tools, pane executes them, feeds the results back. same model as Claude Desktop, without the vendor lock-in.
 - **approval gates.** per-server human-in-the-loop confirmation before tool execution. see the arguments, approve or deny inline.
-- **config, not code.** endpoint, model, system prompt, MCP servers — everything lives in a YAML file. `pane new` generates one.
+- **config, not code.** endpoints, model connections, system prompt, MCP servers — everything lives in a YAML file. `pane new` generates one.
 
 ## quick start
 
@@ -40,7 +40,18 @@ pane loads config from (lowest to highest priority):
 ```yaml
 endpoint: http://localhost:11434/v1
 api_key: sk-...             # optional bearer token
-model: qwen3.5:35b
+model: qwen3.8-27b@local
+models:
+  qwen3.8-27b@local:
+    upstream_model: qwen3.8-27b
+    context_window: 262144
+    max_tokens: 24756
+  qwen3.8-27b@remote:
+    endpoint: http://model-host:11434/v1
+    upstream_model: qwen3.8-27b
+    api_key: remote-token
+    context_window: 163840
+    max_tokens: 24756
 system: "You are a helpful assistant."
 listen: 127.0.0.1:8400
 
@@ -53,6 +64,8 @@ mcp:
       approve: true
       timeout: 30s
 ```
+
+the `models` keys are the names shown in pane. `endpoint` and `api_key` are optional within each model: an omitted value inherits the top-level setting, while `api_key: ""` intentionally disables bearer authentication for that model. `upstream_model` defaults to the alias. when `models` is omitted, pane keeps the original single-endpoint behavior and discovers models from that endpoint.
 
 ## MCP servers
 
@@ -67,7 +80,7 @@ servers with `approve: true` pause before execution and present the tool name an
 ## what pane is not
 
 - **not a model runner.** it doesn't touch GGUF files or GPU memory. that's Ollama's job.
-- **not a gateway.** it doesn't route between providers or manage API keys across users. point it at your endpoint and go.
+- **not a general gateway.** it selects only explicitly configured model connections. it does no discovery across hosts, load balancing, failover, or multi-user credential management.
 - **not multi-tenant.** one human, one browser, one instance.
 - **not a framework.** no plugin API, no extension points, no SDK. pane is an appliance.
 

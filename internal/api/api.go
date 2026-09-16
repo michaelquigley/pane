@@ -11,11 +11,12 @@ import (
 )
 
 type API struct {
-	cfg       *config.Config
-	llm       *llm.Client
-	mcp       *mcp.Manager
-	sessions  *session.Store
-	approvals *ApprovalRegistry
+	cfg          *config.Config
+	llm          *llm.Client
+	modelClients map[string]*llm.Client
+	mcp          *mcp.Manager
+	sessions     *session.Store
+	approvals    *ApprovalRegistry
 }
 
 type healthResponse struct {
@@ -30,13 +31,14 @@ type configResponse struct {
 	DefaultContextWindow int            `dd:",+omitempty"`
 }
 
-func NewAPI(cfg *config.Config, llmClient *llm.Client, mcpMgr *mcp.Manager, sessions *session.Store) *API {
+func NewAPI(cfg *config.Config, llmClient *llm.Client, modelClients map[string]*llm.Client, mcpMgr *mcp.Manager, sessions *session.Store) *API {
 	return &API{
-		cfg:       cfg,
-		llm:       llmClient,
-		mcp:       mcpMgr,
-		sessions:  sessions,
-		approvals: NewApprovalRegistry(),
+		cfg:          cfg,
+		llm:          llmClient,
+		modelClients: modelClients,
+		mcp:          mcpMgr,
+		sessions:     sessions,
+		approvals:    NewApprovalRegistry(),
 	}
 }
 
@@ -63,13 +65,28 @@ func (a *API) handleConfig(w http.ResponseWriter, _ *http.Request) {
 	if a.cfg.MCP != nil && a.cfg.MCP.Separator != "" {
 		separator = a.cfg.MCP.Separator
 	}
+	contextWindows := a.cfg.ContextWindows
+	defaultContextWindow := a.cfg.DefaultContextWindow
+	if a.cfg.HasModelRegistry() {
+		contextWindows = nil
+		defaultContextWindow = 0
+		for _, model := range a.cfg.ResolvedModels() {
+			if model.ContextWindow <= 0 {
+				continue
+			}
+			if contextWindows == nil {
+				contextWindows = make(map[string]int)
+			}
+			contextWindows[model.Alias] = model.ContextWindow
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = dd.UnbindJSONWriter(configResponse{
 		DefaultSystem:        a.cfg.System,
 		DefaultModel:         a.cfg.Model,
 		MCPSeparator:         separator,
-		ContextWindows:       a.cfg.ContextWindows,
-		DefaultContextWindow: a.cfg.DefaultContextWindow,
+		ContextWindows:       contextWindows,
+		DefaultContextWindow: defaultContextWindow,
 	}, w)
 }

@@ -44,6 +44,23 @@ listen: 127.0.0.1:8400
 #  qwen3.8-27b: 24756
 #default_max_tokens: 0
 
+# optional explicit model registry. its keys are the model aliases shown in pane.
+# when present, the default model above must name one of these aliases. endpoint
+# and api_key inherit the top-level values when omitted; api_key: "" disables
+# bearer authentication for that model. upstream_model defaults to the alias.
+# profile context_window and max_tokens are independent of the legacy maps above.
+#models:
+#  qwen3.8-27b@local:
+#    upstream_model: qwen3.8-27b
+#    context_window: 262144
+#    max_tokens: 24756
+#  qwen3.8-27b@remote:
+#    endpoint: http://model-host:11400/v1
+#    upstream_model: qwen3.8-27b
+#    api_key: remote-token
+#    context_window: 163840
+#    max_tokens: 24756
+
 # ask the upstream for token usage on every request (default true).
 # set false for an endpoint that rejects the stream_options field.
 #include_usage: false
@@ -68,12 +85,12 @@ func init() {
 		Run: func(_ *cobra.Command, _ []string) {
 			path := "pane.yaml"
 			if _, err := os.Stat(path); err == nil {
-				dl.Fatalf("%s already exists", path)
+				dl.Fatalf("'%s' already exists", path)
 			}
 			if err := os.WriteFile(path, []byte(configTemplate), 0644); err != nil {
-				dl.Fatalf("writing %s: %v", path, err)
+				dl.Fatalf("writing '%s': %v", path, err)
 			}
-			fmt.Printf("wrote %s\n", path)
+			fmt.Printf("wrote '%s'\n", path)
 		},
 	})
 }

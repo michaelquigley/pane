@@ -6,29 +6,30 @@ a thin pane of glass between a human and an LLM. Go binary with an embedded web 
 
 open-webui and its ilk are bloated. they bundle auth, RAG, model management, user management, plugin systems — machinery that belongs elsewhere in the stack. worse, their MCP support is HTTP-only, which means every local MCP server needs a transport adapter just to be reachable.
 
-what's needed is a thin pane of glass between a human and an OpenAI-compatible completions endpoint (llm-gateway), with the ability to wire in MCP stdio servers directly — the same way Claude Desktop does it, but without the Anthropic lock-in.
+what's needed is a thin pane of glass between a human and OpenAI-compatible completions endpoints, with the ability to wire in MCP stdio servers directly — the same way Claude Desktop does it, but without the Anthropic lock-in.
 
 ## positioning
 
-pane sits at the terminal edge of the llm-gateway / mcp-gateway ecosystem:
+pane sits at the terminal edge of the llm-gateway / mcp-gateway ecosystem and can also connect to explicitly configured model hosts:
 
 ```mermaid
 flowchart LR
     pane["pane<br/>(chat + mcp)"] --> gateway["llm-gateway<br/>(routing)"]
     gateway --> backends["ollama / openai / anthropic / …"]
+    pane --> hosts["configured model hosts"]
     pane -- stdio --> mcp["MCP servers<br/>(filesystem, git, baabhive, etc.)"]
 ```
 
-llm-gateway handles model routing, auth, and backend selection. mcp-gateway handles multi-tenant tool aggregation over zero-trust networking. pane handles the human conversation — it doesn't need to know about any of that plumbing. it just talks OpenAI-compatible chat completions and spawns local MCP servers.
+llm-gateway can handle dynamic routing, auth, and backend selection. pane also supports a small explicit registry in which each UI-visible alias names one fixed connection. this is configuration-driven selection, with no discovery across hosts, load balancing, or failover. mcp-gateway handles multi-tenant tool aggregation over zero-trust networking. pane handles the human conversation, talks OpenAI-compatible chat completions, and spawns local MCP servers.
 
 ## principles
 
 - **single binary.** build it, run it, open a browser. no node, no docker, no database.
 - **embedded frontend.** the web UI is `embed.FS` inside the binary. one artifact to distribute.
-- **config, not code.** MCP servers, endpoint URL, model selection — all in a YAML file.
+- **config, not code.** MCP servers, endpoint URLs, model connections, and model selection — all in a YAML file.
 - **stdio MCP only.** pane runs on the same machine as the human. it spawns MCP servers as child processes and talks stdio. HTTP/SSE MCP belongs in mcp-gateway.
 - **the backend owns the record, not the conversation.** the record lives on disk as one opaque JSON file per conversation under the data directory, which the binary creates at startup, named for the conversation's id with the id in no field of the body. `/api/chat` stays full-history-per-request and keeps no in-memory conversation state, so the chat path is still a stateless proxy with MCP superpowers. the browser holds a working copy of the record — the mirror model — plus per-browser view state (active conversation, preferences).
-- **streaming everywhere.** SSE from backend to frontend. streaming from llm-gateway to backend.
+- **streaming everywhere.** SSE from backend to frontend. streaming from the selected upstream to backend.
 
 ## architecture
 
@@ -43,7 +44,7 @@ flowchart TB
         http --> engine
         manager --> engine
     end
-    engine -- "OpenAI-compatible<br/>chat/completions" --> gateway["llm-gateway"]
+    engine -- "selected OpenAI-compatible<br/>chat/completions connection" --> upstream["gateway or model host"]
 ```
 
 ### chat engine — the tool call loop
@@ -88,7 +89,7 @@ minimal surface:
 | `/api/health` | GET | health check, returns `{"status": "ok"}` |
 | `/api/config` | GET | server defaults for the UI: system prompt, model, separator, and context windows |
 | `/api/chat` | POST | chat completion proxy with MCP tool loop. accepts OpenAI-format messages array. returns SSE stream. |
-| `/api/models` | GET | proxy to llm-gateway's `/v1/models` |
+| `/api/models` | GET | configured aliases in registry mode; upstream `/v1/models` proxy in legacy mode |
 | `/api/tools` | GET | return discovered MCP tools and server statuses (for frontend display) |
 | `/api/tools/approve` | POST | approve or deny a pending tool call (for servers with `approve: true`) |
 | `/api/sessions` | GET | list every stored conversation's projection, sorted by updated descending, id ordinal-ascending as the tiebreak |
@@ -139,21 +140,23 @@ returns the server-side defaults and context-window facts the UI needs:
 }
 ```
 
-`context_windows` and `default_context_window` are omitted when they are not configured. `include_usage` is deliberately absent: it is a backend-side request knob that controls the upstream wire contract, not a frontend setting.
+`context_windows` and `default_context_window` are omitted when they are not configured. in registry mode, `context_windows` is derived only from the configured aliases and `default_context_window` is omitted. `include_usage` is deliberately absent: it is a backend-side request knob that controls the upstream wire contract, not a frontend setting.
 
 #### `GET /api/models`
 
-passthrough proxy to llm-gateway's `GET /v1/models`. response is the standard OpenAI models list:
+the response uses the standard OpenAI models-list shape. in registry mode it is generated from the sorted registry keys, with no request to an upstream host:
 
 ```json
 {
   "object": "list",
   "data": [
-    { "id": "qwen2.5:14b", "object": "model", "owned_by": "ollama" },
-    { "id": "llama3.1:8b", "object": "model", "owned_by": "ollama" }
+    { "id": "qwen3.8-27b@local", "object": "model", "owned_by": "pane" },
+    { "id": "qwen3.8-27b@remote", "object": "model", "owned_by": "pane" }
   ]
 }
 ```
+
+the aliases are pane's public model identities; the upstream model ids and connection details are not exposed. in legacy mode, the handler remains a passthrough proxy to the top-level endpoint's `GET /v1/models`.
 
 #### `GET /api/tools`
 
@@ -260,7 +263,7 @@ data: {}
 
 `thinking_delta` is the model's reasoning, streamed one token at a time and interleaved with `delta` and the tool-call events in upstream order. it is display-only by construction: the backend `llm.Message` type carries no reasoning field, so reasoning is never accumulated, never echoed in the `round_complete` payload, and never re-sent to the model. the upstream stream reader tolerates both known reasoning field spellings — `reasoning` (openai o-style) and `reasoning_content` (the vllm / sglang family) — and emits a single pane field regardless of which one appears on the wire.
 
-`usage` carries the upstream's `prompt_tokens`, `completion_tokens`, and `total_tokens` scalars unchanged. it fires once per round when the upstream reports usage, after that round's content and tool-call stream events and before `round_complete`. it is absent when `include_usage` is off or when the upstream declines to report usage; either case leaves the turn otherwise unchanged.
+`usage` carries the upstream's `prompt_tokens`, `completion_tokens`, and `total_tokens` scalars unchanged. it fires once per round when the upstream reports usage, after that round's content and tool-call stream events and before `round_complete`. the frontend records the selected pane alias with the measurement, so changing models causes the meter to use the newly selected alias and its configured context window. usage is absent when `include_usage` is off or when the upstream declines to report usage; either case leaves the turn otherwise unchanged.
 
 for servers with `approve: true`, an approval gate is inserted before `tool_call_executing`:
 
@@ -299,8 +302,8 @@ data: {"code": "upstream_unreachable", "message": "connection refused"}
 
 | code | meaning |
 |---|---|
-| `upstream_unreachable` | can't connect to llm-gateway |
-| `upstream_error` | llm-gateway returned an HTTP error or the stream broke mid-response |
+| `upstream_unreachable` | can't connect to the selected upstream |
+| `upstream_error` | the selected upstream returned an HTTP error or the stream broke mid-response |
 | `empty_response` | the stream completed but the model produced neither content nor tool calls — nothing was committed for the round. when the model spent its whole output budget thinking before producing anything, the message says so (a backend budget problem to fix, not a model failure) |
 | `repeated_tool_failure` | the model kept calling tools after the loop forced a final answer |
 | `max_iterations` | tool call loop exceeded the iteration cap |
@@ -310,11 +313,11 @@ data: {"code": "upstream_unreachable", "message": "connection refused"}
 ```mermaid
 flowchart TD
     a["1. user sends POST /api/chat"] --> b["2. backend opens the SSE stream"]
-    b --> c["3. backend submits to llm-gateway with stream=true"]
-    c --> d["4. llm-gateway streams delta, thinking_delta, and tool-call events"]
+    b --> c["3. backend submits to the selected upstream with stream=true"]
+    c --> d["4. upstream streams delta, thinking_delta, and tool-call events"]
     d --> u["5. usage after the round's stream, when reported"]
     u --> e{"the stream carries tool_calls?"}
-    e -- "no" --> h["9. llm-gateway signals completion: done, SSE stream closes"]
+    e -- "no" --> h["9. upstream signals completion: done, SSE stream closes"]
     e -- "yes" --> g{"server has approve: true?"}
     g -- "yes" --> i["6. tool_call_approve: wait on POST /api/tools/approve (5-minute timeout)"]
     g -- "no" --> j["7. tool_call_executing: dispatch to the MCP server via stdio"]
@@ -338,7 +341,7 @@ the frontend matches events by `id` to render each tool block independently.
 
 ### MCP-to-OpenAI schema translation
 
-MCP `tools/list` returns tools in MCP format. pane translates these to OpenAI function-calling format for the llm-gateway request. the schema mapping is mechanical — `description` and `inputSchema` pass through (both are JSON Schema) — but the function name is generated, not joined:
+MCP `tools/list` returns tools in MCP format. pane translates these to OpenAI function-calling format for the upstream request. the schema mapping is mechanical — `description` and `inputSchema` pass through (both are JSON Schema) — but the function name is generated, not joined:
 
 - the callable name is `sanitize(server_tool)` truncated and suffixed with a 10-character sha256 hash of the (server, tool) identity, capped at 64 characters — the OpenAI function-name limit. e.g. `baabhive` + `hive_sql` → `baabhive_hive_sql_3f9c2ab1d4`.
 - sanitization strips characters that models mishandle in function names; the hash suffix guarantees uniqueness even when sanitization or truncation would collide.
@@ -524,7 +527,7 @@ the UI:
 
 - **chat view.** messages rendered as markdown (with syntax-highlighted code blocks). streaming token display with a visible cursor/caret. assistant messages that carry thinking render a quiet thinking block above their content — live and always expanded while the turn streams, resting expanded at turn end, collapsible by the reader with the collapsed state persisting per message.
 - **tool call visibility.** when the LLM invokes a tool, show it inline — the tool name, arguments (collapsible), and result (collapsible). not hidden, not modal — part of the conversation flow. think Claude Desktop's tool use blocks. each round's thinking block sits above the tool calls that round motivated, so the reader sees the model reason its way into a call.
-- **model selector.** the toolbar's model control: a glyph beside a compact dropdown populated from `/api/models`. the dropdown's popup keeps the browser's native styling — like scrollbars, not worth fighting (the family's recorded decision). persisted in localStorage.
+- **model selector.** the toolbar's model control: a glyph beside a compact dropdown populated from `/api/models`. in registry mode these values are the configured aliases, which can distinguish the same upstream model on different hosts. the dropdown's popup keeps the browser's native styling — like scrollbars, not worth fighting (the family's recorded decision). persisted in localStorage.
 - **context meter.** the readout in the bar's signal column. it compares the latest `prompt_tokens` measurement with the selected model's exact configured window, then shifts from cool below 50%, to warm from 50–80%, to hot at 80% and above. `?` names the distinct unknown state in its tooltip: no usage yet, a measurement from another model, or no configured window for the measured model.
 - **tool panel.** slide-out sidebar below the bar, opened from the toolbar's tools glyph (lit while open, wearing the tool count as a badge while the count is positive) showing discovered MCP tools and server statuses.
 - **system prompt.** the toolbar's description glyph — lit on the non-default modes — opens a modal holding the mode select (default/custom/none) and, for custom, the text. escape and outside click close it, returning focus to the glyph. mode and text persist in localStorage.
@@ -583,6 +586,23 @@ listen: 127.0.0.1:8400
 #  qwen3.8-27b: 24756
 #default_max_tokens: 0
 
+# optional explicit model registry. its keys are the model aliases shown in pane.
+# when present, the default model above must name one of these aliases. endpoint
+# and api_key inherit the top-level values when omitted; api_key: "" disables
+# bearer authentication for that model. upstream_model defaults to the alias.
+# profile context_window and max_tokens are independent of the legacy maps above.
+#models:
+#  qwen3.8-27b@local:
+#    upstream_model: qwen3.8-27b
+#    context_window: 262144
+#    max_tokens: 24756
+#  qwen3.8-27b@remote:
+#    endpoint: http://model-host:11400/v1
+#    upstream_model: qwen3.8-27b
+#    api_key: remote-token
+#    context_window: 163840
+#    max_tokens: 24756
+
 # ask the upstream for token usage on every request (default true).
 # set false for an endpoint that rejects the stream_options field.
 #include_usage: false
@@ -612,7 +632,11 @@ the config cascade, lowest to highest priority: compiled defaults → `~/.config
 
 `data_dir` is where the session store lives. it resolves to the configured value when set — a leading `~` expanding to the user's home directory — else `$XDG_DATA_HOME/pane`, else `~/.local/share/pane`; the documents sit in a `sessions/` subdirectory under it, leaving room for future disk data in the same home. the store is always on and has no other setting, so `/api/config` reports nothing about it.
 
-`max_tokens` (per model id) and `default_max_tokens` set the completion token cap the backend sends upstream, like `include_usage` a backend-side request knob rather than a frontend setting. a model with no entry and no default sends no `max_tokens` field, so the backend's own output budget applies. thinking models need a generous cap: the model's reasoning consumes the output budget before any answer or tool call is produced, so a small budget ends the turn with an `empty_response` error after the model has thought for a while and said nothing.
+when `models` is present, its keys are the only accepted model names. selecting an alias chooses its endpoint, upstream model id, bearer key, context window, and output cap as one connection. `endpoint` and `api_key` fall back independently to the top-level values when omitted. an explicitly empty per-model `api_key` disables authentication. `upstream_model` defaults to the alias. unknown aliases are rejected before an SSE stream starts, and `/api/models` reports the configured aliases without probing any host.
+
+when `models` is absent, pane keeps the original single-endpoint mode: the model selector is populated from the top-level endpoint, arbitrary returned model ids use that endpoint and bearer key, and `context_windows`, `default_context_window`, `max_tokens`, and `default_max_tokens` provide their legacy model-id lookups. registry profiles do not inherit those legacy token maps or defaults; each profile owns its optional `context_window` and `max_tokens`, and an omitted value means unknown context or no explicit output cap.
+
+`max_tokens` and profile `max_tokens` are backend-side request knobs rather than frontend settings. a model with no applicable cap sends no `max_tokens` field, so the backend's own output budget applies. thinking models need a generous cap: the model's reasoning consumes the output budget before any answer or tool call is produced, so a small budget ends the turn with an `empty_response` error after the model has thought for a while and said nothing.
 
 ## dependencies
 
@@ -628,6 +652,7 @@ the config cascade, lowest to highest priority: compiled defaults → `~/.config
 ### Frontend
 - **React 19** + **TypeScript** — UI framework.
 - **Vite** — build tooling. fast dev server, clean production output for embedding.
+- **Vitest** — focused frontend behavior tests.
 - **react-markdown** + **remark-gfm** — markdown rendering in messages.
 - **react-syntax-highlighter** (prism) — code blocks.
 - **@fontsource-variable/source-serif-4** + **@fontsource-variable/jetbrains-mono** — bundled fonts.
@@ -649,14 +674,14 @@ pane has three failure domains, each with a distinct recovery strategy.
 
 the key principle: tool errors are not stream errors. when a tool fails, pane injects the failure as a tool result and lets the LLM continue. the SSE stream only closes on unrecoverable errors.
 
-### llm-gateway failures
+### upstream failures
 
 | failure | backend behavior | frontend rendering |
 |---|---|---|
 | connection refused | emit `event: error` with `code: upstream_unreachable`, close stream | error shown in conversation |
 | HTTP 4xx/5xx or stream interrupted | emit `event: error` with `code: upstream_error`, close stream | streaming content preserved, error appended |
 | stream completes with an empty completion (no content, no tool calls) | emit `event: error` with `code: empty_response`, close stream; the message names the cause when the model hit its output token limit while thinking, and the empty round is not committed, so the history stays clean. the fix is a bigger output budget: the backend's default, or pane's `max_tokens` setting for the model | error shown in conversation |
-| malformed SSE from gateway | log warning, skip malformed chunk, continue | invisible to user unless it corrupts the response |
+| malformed upstream SSE | log warning, skip malformed chunk, continue | invisible to user unless it corrupts the response |
 
 ### frontend failures
 
@@ -672,7 +697,7 @@ the key principle: tool errors are not stream errors. when a tool fails, pane in
 ## what pane is _not_
 
 - **not a model runner.** it doesn't touch GGUF files or GPU memory. that's Ollama's job.
-- **not a gateway.** it doesn't route between models or manage API keys. that's llm-gateway's job.
+- **not a general gateway.** it selects only explicitly configured model connections. it does no discovery across hosts, load balancing, failover, or multi-user credential management.
 - **not multi-tenant.** one human, one browser, one instance. multi-user MCP is mcp-gateway's job.
 - **not a framework.** there's no plugin API, no extension points, no SDK. pane is an appliance.
 
@@ -682,7 +707,7 @@ things the original design contemplated that remain unbuilt, plus gaps observed 
 
 1. **tool enable/disable.** the original design specified `POST /api/tools/toggle` and a `tools_disabled` chat field; neither was built. all discovered tools are always attached. the tool panel displays but does not toggle.
 2. **MCP server restart.** no automatic restart of crashed servers (the design called for 3 retries with backoff). a dead server's tools simply disappear until pane restarts.
-3. **image/multimodal.** llm-gateway supports vision models; pane doesn't wire image paste/upload through yet.
+3. **image/multimodal.** OpenAI-compatible upstreams can support vision models; pane doesn't wire image paste/upload through yet.
 4. **MCP resources & prompts.** MCP defines resources and prompts in addition to tools. tools are the critical path; resources and prompts can come later.
 5. **config hot reload.** the MCP manager doesn't watch the config file; server changes require a restart.
 6. **cross-tab sync is reload-scoped.** two tabs hold independent working copies of the same disk record: a change in one is on disk immediately but invisible to the other until it reloads, and two writers to one conversation resolve last-write-wins. the named path to tightening this is a server-assigned version the store increments on every accepted save, which a stale save would be rejected against.
@@ -692,7 +717,7 @@ things the original design contemplated that remain unbuilt, plus gaps observed 
 
 ```bash
 make build   # npm install + frontend build + go install ./... (default target)
-make test    # go test ./... -count=1 && go vet ./...
+make test    # frontend tests, go test ./... -count=1, and go vet ./...
 make clean   # go clean, remove installed binaries, ui/dist, ui/node_modules
 ```
 

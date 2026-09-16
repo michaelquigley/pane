@@ -47,7 +47,7 @@ func run(_ *cobra.Command, _ []string) {
 		dl.Fatalf("loading config: %v", err)
 	}
 
-	dl.Debugf("config: endpoint=%s model=%s listen=%s", cfg.Endpoint, cfg.Model, cfg.Listen)
+	dl.Debugf("config: endpoint='%s' model='%s' listen='%s'", cfg.Endpoint, cfg.Model, cfg.Listen)
 
 	dataDir, err := cfg.SessionDataDir()
 	if err != nil {
@@ -70,7 +70,8 @@ func run(_ *cobra.Command, _ []string) {
 	mcpMgr.Start(ctx)
 
 	llmClient := llm.NewClient(cfg.Endpoint, cfg.Model, cfg.ApiKey, cfg.IncludeUsage)
-	a := api.NewAPI(cfg, llmClient, mcpMgr, sessions)
+	modelClients := api.NewModelClients(cfg)
+	a := api.NewAPI(cfg, llmClient, modelClients, mcpMgr, sessions)
 
 	mux := http.NewServeMux()
 	a.RegisterRoutes(mux)

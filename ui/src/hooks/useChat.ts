@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react'
 import type { Message, ActiveToolCall, Conversation, SSEEvent, ToolCallResult, SystemPromptMode, UsageRecord } from '../types'
 import { createSSEParser } from '../lib/sse'
+import { usageRecordFromEvent } from '../lib/usageRecord'
 
 interface SendMessageOptions {
   model: string
@@ -165,13 +166,7 @@ export function useChat() {
             }
 
             case 'usage': {
-              setUsageRecord({
-                promptTokens: event.prompt_tokens,
-                completionTokens: event.completion_tokens,
-                totalTokens: event.total_tokens,
-                model: options.model,
-                at: Date.now(),
-              })
+              setUsageRecord(usageRecordFromEvent(event, options.model))
               break
             }
 

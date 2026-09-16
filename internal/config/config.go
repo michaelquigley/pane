@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,9 +22,27 @@ type Config struct {
 	DefaultContextWindow int
 	MaxTokens            map[string]int
 	DefaultMaxTokens     int
+	Models               map[string]*ModelConfig
 	IncludeUsage         bool
 	DataDir              string
 	MCP                  *MCPConfig
+}
+
+type ModelConfig struct {
+	Endpoint      string
+	UpstreamModel string
+	ApiKey        *string
+	ContextWindow *int
+	MaxTokens     *int
+}
+
+type ResolvedModel struct {
+	Alias         string
+	Endpoint      string
+	UpstreamModel string
+	ApiKey        string
+	ContextWindow int
+	MaxTokens     int
 }
 
 type MCPConfig struct {
@@ -39,7 +58,7 @@ type ServerConfig struct {
 	Timeout string
 }
 
-func DefaultConfig() *Config {
+func NewConfig() *Config {
 	return &Config{
 		Endpoint:     "http://localhost:18080/v1",
 		Model:        "qwen2.5:14b",
@@ -53,7 +72,7 @@ func DefaultConfig() *Config {
 }
 
 func Load(configPath string) (*Config, error) {
-	cfg := DefaultConfig()
+	cfg := NewConfig()
 	if err := mergeIfExists(cfg, globalConfigPath()); err != nil {
 		return nil, err
 	}
@@ -72,7 +91,7 @@ func Load(configPath string) (*Config, error) {
 }
 
 func (c *Config) Validate() error {
-	if c.Endpoint == "" {
+	if !c.HasModelRegistry() && strings.TrimSpace(c.Endpoint) == "" {
 		return fmt.Errorf("endpoint is required")
 	}
 	if c.Listen == "" {
@@ -85,6 +104,43 @@ func (c *Config) Validate() error {
 	}
 	if c.DefaultContextWindow < 0 {
 		return fmt.Errorf("default context window must be greater than zero when set")
+	}
+	for model, maxTokens := range c.MaxTokens {
+		if maxTokens <= 0 {
+			return fmt.Errorf("max tokens for %q must be greater than zero", model)
+		}
+	}
+	if c.DefaultMaxTokens < 0 {
+		return fmt.Errorf("default max tokens must be greater than zero when set")
+	}
+	if c.HasModelRegistry() {
+		if _, ok := c.Models[c.Model]; !ok || strings.TrimSpace(c.Model) == "" {
+			return fmt.Errorf("default model '%s' is not in the model registry", c.Model)
+		}
+		for alias, model := range c.Models {
+			if strings.TrimSpace(alias) == "" {
+				return fmt.Errorf("model registry key must not be blank")
+			}
+			if model == nil {
+				return fmt.Errorf("model '%s': configuration is required", alias)
+			}
+			resolved, ok := c.ResolveModel(alias)
+			if !ok {
+				return fmt.Errorf("model '%s': could not be resolved", alias)
+			}
+			if strings.TrimSpace(resolved.Endpoint) == "" {
+				return fmt.Errorf("model '%s': endpoint is required", alias)
+			}
+			if strings.TrimSpace(resolved.UpstreamModel) == "" {
+				return fmt.Errorf("model '%s': upstream model is required", alias)
+			}
+			if model.ContextWindow != nil && *model.ContextWindow <= 0 {
+				return fmt.Errorf("model '%s': context window must be greater than zero", alias)
+			}
+			if model.MaxTokens != nil && *model.MaxTokens <= 0 {
+				return fmt.Errorf("model '%s': max tokens must be greater than zero", alias)
+			}
+		}
 	}
 	if c.MCP != nil {
 		for name, sc := range c.MCP.Servers {
@@ -99,6 +155,100 @@ func (c *Config) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (c *Config) HasModelRegistry() bool {
+	return len(c.Models) > 0
+}
+
+func (c *Config) ResolveModel(requested string) (ResolvedModel, bool) {
+	alias := requested
+	if strings.TrimSpace(alias) == "" {
+		alias = c.Model
+	}
+
+	if !c.HasModelRegistry() {
+		if strings.TrimSpace(alias) == "" {
+			return ResolvedModel{}, false
+		}
+		return ResolvedModel{
+			Alias:         alias,
+			Endpoint:      c.Endpoint,
+			UpstreamModel: alias,
+			ApiKey:        c.ApiKey,
+			ContextWindow: resolveLegacyContextWindow(alias, c),
+			MaxTokens:     resolveLegacyMaxTokens(alias, c),
+		}, true
+	}
+
+	model, ok := c.Models[alias]
+	if !ok || model == nil {
+		return ResolvedModel{}, false
+	}
+
+	endpoint := model.Endpoint
+	if strings.TrimSpace(endpoint) == "" {
+		endpoint = c.Endpoint
+	}
+	upstreamModel := model.UpstreamModel
+	if strings.TrimSpace(upstreamModel) == "" {
+		upstreamModel = alias
+	}
+	apiKey := c.ApiKey
+	if model.ApiKey != nil {
+		apiKey = *model.ApiKey
+	}
+	contextWindow := 0
+	if model.ContextWindow != nil {
+		contextWindow = *model.ContextWindow
+	}
+	maxTokens := 0
+	if model.MaxTokens != nil {
+		maxTokens = *model.MaxTokens
+	}
+
+	return ResolvedModel{
+		Alias:         alias,
+		Endpoint:      endpoint,
+		UpstreamModel: upstreamModel,
+		ApiKey:        apiKey,
+		ContextWindow: contextWindow,
+		MaxTokens:     maxTokens,
+	}, true
+}
+
+func (c *Config) ResolvedModels() []ResolvedModel {
+	if !c.HasModelRegistry() {
+		return nil
+	}
+
+	aliases := make([]string, 0, len(c.Models))
+	for alias := range c.Models {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+
+	models := make([]ResolvedModel, 0, len(aliases))
+	for _, alias := range aliases {
+		if model, ok := c.ResolveModel(alias); ok {
+			models = append(models, model)
+		}
+	}
+	return models
+}
+
+func resolveLegacyContextWindow(model string, cfg *Config) int {
+	if window, ok := cfg.ContextWindows[model]; ok {
+		return window
+	}
+	return cfg.DefaultContextWindow
+}
+
+func resolveLegacyMaxTokens(model string, cfg *Config) int {
+	if cap, ok := cfg.MaxTokens[model]; ok {
+		return cap
+	}
+	return cfg.DefaultMaxTokens
 }
 
 func mergeIfExists(cfg *Config, path string) error {

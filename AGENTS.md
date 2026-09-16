@@ -6,7 +6,7 @@ a thin pane of glass between a human and an LLM. Go binary with an embedded Reac
 
 see `README.md` for the user-facing overview. design docs land in `docs/` — `docs/current/` for built behavior, `docs/future/` for forward-looking specs. `docs/current/pane.md` holds the original design document.
 
-pane is a single-binary chat client that proxies to any OpenAI-compatible completions endpoint and spawns local MCP servers as child processes for tool use. conversations live on disk as one opaque JSON file each under a configurable data directory; the browser holds a working copy and per-browser view state. the chat path stays stateless -- every `/api/chat` request carries the full history.
+pane is a single-binary chat client that connects to OpenAI-compatible completions endpoints and spawns local MCP servers as child processes for tool use. an optional explicit model registry binds UI-visible aliases to fixed endpoints, upstream model ids, credentials, context windows, and output caps; configurations without it retain the original single-endpoint behavior. conversations live on disk as one opaque JSON file each under a configurable data directory; the browser holds a working copy and per-browser view state. the chat path stays stateless -- every `/api/chat` request carries the full history.
 
 ## tech stack
 
@@ -16,7 +16,7 @@ pane is a single-binary chat client that proxies to any OpenAI-compatible comple
 - **logging**: github.com/michaelquigley/df/dl (structured slog wrapper)
 - **MCP**: github.com/mark3labs/mcp-go (stdio client)
 - **LLM client**: hand-rolled OpenAI-compatible HTTP client (no third-party dependency)
-- **frontend**: React 19 + TypeScript + Vite, embedded via go:embed
+- **frontend**: React 19 + TypeScript + Vite, embedded via go:embed; Vitest for focused behavior tests
 - **markdown**: react-markdown + remark-gfm + react-syntax-highlighter
 - **fonts**: Source Serif 4 + JetBrains Mono, bundled via @fontsource-variable packages (embedded in the binary, no runtime font fetch)
 - **versioning**: github.com/michaelquigley/push/build — version/commit/date stamped via ldflags in CI (`.github/workflows/ci.yml`); developer builds report `v0.1.x [developer build]`
@@ -46,6 +46,7 @@ pane/
 │   └── api/                    # HTTP API handlers
 │       ├── api.go              # API struct, route registration
 │       ├── chat.go             # POST /api/chat (tool loop integration)
+│       ├── modelClients.go     # construct one immutable LLM client per configured alias
 │       ├── models.go           # GET /api/models
 │       ├── tools.go            # GET /api/tools
 │       ├── sessions.go         # /api/sessions CRUD handlers
@@ -59,6 +60,7 @@ pane/
 │       ├── types.ts            # Conversation, Message, ToolCall, SSEEvent, etc.
 │       ├── lib/
 │       │   ├── sse.ts          # SSE stream parser (pane's protocol)
+│       │   ├── usageRecord.ts  # attach selected model aliases to usage events
 │       │   ├── sessionStore.ts   # SessionStore interface + backend adapter
 │       │   └── exportMarkdown.ts # conversation-to-markdown export
 │       ├── hooks/
@@ -104,13 +106,15 @@ pane/
 
 6. **zrok embed pattern** — frontend source lives in `ui/`, builds to `ui/dist/`, embedded via `//go:embed dist`. `embed_stub.go` with `no_ui` build tag enables headless builds.
 
+7. **explicit model connections** — when `models` is configured, its keys are strict pane-visible aliases. each alias resolves one endpoint, upstream model id, bearer key, context window, and output cap. endpoint and key can inherit the top-level connection; an explicit empty per-model key disables auth. `/api/models` reports the configured aliases without probing hosts. without a registry, the legacy single-endpoint discovery path remains intact.
+
 ## API surface
 
 | endpoint | method | description |
 |---|---|---|
 | `/api/health` | GET | health check |
 | `/api/config` | GET | server config (system prompt, model, context windows) |
-| `/api/models` | GET | proxy to LLM endpoint's /v1/models |
+| `/api/models` | GET | configured aliases in registry mode; proxy to the LLM endpoint's `/v1/models` in legacy mode |
 | `/api/chat` | POST | chat completion with MCP tool loop, returns SSE stream |
 | `/api/tools` | GET | discovered MCP tools with server statuses |
 | `/api/tools/approve` | POST | approve/deny a pending tool call |
@@ -132,6 +136,8 @@ config cascade (lowest to highest priority):
 4. `--config` flag
 
 loading uses `dd.MergeYAMLFile` with `dd.FileError` not-found handling. see `internal/config/config.go`.
+
+the optional `models` map is keyed by the aliases exposed to the browser. `endpoint` and `api_key` fall back to their top-level values when omitted; `api_key: ""` disables bearer auth for that alias. `upstream_model` defaults to the alias. profile `context_window` and `max_tokens` values are independent of the legacy top-level maps and defaults.
 
 `data_dir` locates the session store: the configured value (a leading `~` expanding to home), else `$XDG_DATA_HOME/pane`, else `~/.local/share/pane`. documents live in a `sessions/` subdirectory under it. the store is always on and fails startup loudly if it cannot be created or written.
 
@@ -155,7 +161,7 @@ hard rules: never touch `order.yaml` (priority is the operator's judgment, set a
 
 ```bash
 make build   # npm install + frontend build + go install ./... (default target)
-make test    # go test ./... -count=1 && go vet ./...
+make test    # frontend tests, go test ./... -count=1, and go vet ./...
 make clean   # go clean, remove installed binaries, ui/dist, ui/node_modules
 ```
 

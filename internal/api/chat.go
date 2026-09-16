@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -25,7 +26,23 @@ func (a *API) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	model := resolveModel(req.Model, a.cfg)
+	model, ok := a.cfg.ResolveModel(req.Model)
+	if !ok {
+		selected := req.Model
+		if strings.TrimSpace(selected) == "" {
+			selected = a.cfg.Model
+		}
+		http.Error(w, fmt.Sprintf("unknown model '%s'", selected), http.StatusBadRequest)
+		return
+	}
+	llmClient := a.llm
+	if a.cfg.HasModelRegistry() {
+		llmClient = a.modelClients[model.Alias]
+		if llmClient == nil {
+			http.Error(w, fmt.Sprintf("model '%s' is unavailable", model.Alias), http.StatusInternalServerError)
+			return
+		}
+	}
 	req.Messages = buildChatMessages(req.Messages, resolveSystemPrompt(req, a.cfg))
 
 	sw, err := sse.NewWriter(w)
@@ -36,26 +53,9 @@ func (a *API) handleChat(w http.ResponseWriter, r *http.Request) {
 
 	tools := a.mcp.GetEnabledTools()
 
-	if err := llm.RunToolLoop(r.Context(), a.llm, req.Messages, model, resolveMaxTokens(model, a.cfg), tools, a.mcp, sw, a.approvals); err != nil {
+	if err := llm.RunToolLoop(r.Context(), llmClient, req.Messages, model.UpstreamModel, model.MaxTokens, tools, a.mcp, sw, a.approvals); err != nil {
 		dl.Errorf("tool loop: %v", err)
 	}
-}
-
-func resolveModel(override string, cfg *config.Config) string {
-	if strings.TrimSpace(override) == "" {
-		return cfg.Model
-	}
-	return override
-}
-
-// resolveMaxTokens picks the output token cap for the resolved model: the
-// per-model value when configured, else the default. zero means the
-// backend's own output budget applies, so the field is left off the request.
-func resolveMaxTokens(model string, cfg *config.Config) int {
-	if cap, ok := cfg.MaxTokens[model]; ok {
-		return cap
-	}
-	return cfg.DefaultMaxTokens
 }
 
 func resolveSystemPrompt(req chatRequest, cfg *config.Config) string {

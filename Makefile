@@ -13,5 +13,6 @@ build:
 	go install ./...
 
 test:
+	npm --prefix ui run test
 	go test ./... -count=1
 	go vet ./...
