@@ -1,19 +1,19 @@
 researching:
+  - authentication.md
+  - per-model-thinking-control.md
+  - auto-compaction.md
   - write-only-tool-approval.md
   - metawoo-branding.md
-  - authentication.md
   - connection-indicator-on-the-toolbar.md
   - toolbar-stream-and-approval-signals.md
   - toolbar-settings-surface.md
   - server-assigned-session-versioning.md
-  - per-model-thinking-control.md
   - camelcase-snakecase.md
   - multi-model-conversation-records.md
   - other-reasoning-wire-formats.md
   - reasoning-in-the-markdown-export.md
   - reasoning-token-accounting.md
   - round-trip-reasoning-echo-in-re-sent-history.md
-  - auto-compaction.md
 evaluating:
 building:
 horizon:
