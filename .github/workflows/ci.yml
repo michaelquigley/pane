@@ -33,6 +33,9 @@ jobs:
       - name: lint frontend
         run: npm --prefix ui run lint
 
+      - name: test frontend
+        run: npm --prefix ui run test
+
       - name: setup go
         uses: actions/setup-go@v6
         with:
