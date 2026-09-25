@@ -35,6 +35,10 @@ func (a *API) handleChat(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("unknown model '%s'", selected), http.StatusBadRequest)
 		return
 	}
+	if model.Provider == config.ProviderCodex {
+		http.Error(w, fmt.Sprintf("model '%s' is not available until subscription chat support is installed", model.Alias), http.StatusServiceUnavailable)
+		return
+	}
 	llmClient := a.llm
 	if a.cfg.HasModelRegistry() {
 		llmClient = a.modelClients[model.Alias]

@@ -29,20 +29,26 @@ type Config struct {
 }
 
 type ModelConfig struct {
-	Endpoint      string
-	UpstreamModel string
-	ApiKey        *string
-	ContextWindow *int
-	MaxTokens     *int
+	Provider             *string
+	CompatibilityProfile string
+	ReasoningEffort      *string
+	Endpoint             *string
+	UpstreamModel        string
+	ApiKey               *string
+	ContextWindow        *int
+	MaxTokens            *int
 }
 
 type ResolvedModel struct {
-	Alias         string
-	Endpoint      string
-	UpstreamModel string
-	ApiKey        string
-	ContextWindow int
-	MaxTokens     int
+	Alias                string
+	Provider             string
+	CompatibilityProfile string
+	ReasoningEffort      *string
+	Endpoint             string
+	UpstreamModel        string
+	ApiKey               string
+	ContextWindow        int
+	MaxTokens            int
 }
 
 type MCPConfig struct {
@@ -73,16 +79,20 @@ func NewConfig() *Config {
 
 func Load(configPath string) (*Config, error) {
 	cfg := NewConfig()
-	if err := mergeIfExists(cfg, globalConfigPath()); err != nil {
+	models := make(map[string]*ModelConfig)
+	if err := mergeLayer(cfg, models, globalConfigPath(), true); err != nil {
 		return nil, err
 	}
-	if err := mergeIfExists(cfg, "./pane.yaml"); err != nil {
+	if err := mergeLayer(cfg, models, "./pane.yaml", true); err != nil {
 		return nil, err
 	}
 	if configPath != "" {
-		if err := dd.MergeYAMLFile(cfg, configPath); err != nil {
+		if err := mergeLayer(cfg, models, configPath, false); err != nil {
 			return nil, err
 		}
+	}
+	if len(models) > 0 {
+		cfg.Models = models
 	}
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
@@ -128,7 +138,10 @@ func (c *Config) Validate() error {
 			if !ok {
 				return fmt.Errorf("model '%s': could not be resolved", alias)
 			}
-			if strings.TrimSpace(resolved.Endpoint) == "" {
+			if err := validateModel(alias, model, resolved); err != nil {
+				return err
+			}
+			if resolved.Provider == ProviderChatCompletions && strings.TrimSpace(resolved.Endpoint) == "" {
 				return fmt.Errorf("model '%s': endpoint is required", alias)
 			}
 			if strings.TrimSpace(resolved.UpstreamModel) == "" {
@@ -173,6 +186,7 @@ func (c *Config) ResolveModel(requested string) (ResolvedModel, bool) {
 		}
 		return ResolvedModel{
 			Alias:         alias,
+			Provider:      ProviderChatCompletions,
 			Endpoint:      c.Endpoint,
 			UpstreamModel: alias,
 			ApiKey:        c.ApiKey,
@@ -186,17 +200,27 @@ func (c *Config) ResolveModel(requested string) (ResolvedModel, bool) {
 		return ResolvedModel{}, false
 	}
 
-	endpoint := model.Endpoint
-	if strings.TrimSpace(endpoint) == "" {
+	provider := ProviderChatCompletions
+	if model.Provider != nil {
+		provider = *model.Provider
+	}
+	endpoint := ""
+	if provider == ProviderChatCompletions {
 		endpoint = c.Endpoint
+		if model.Endpoint != nil && strings.TrimSpace(*model.Endpoint) != "" {
+			endpoint = *model.Endpoint
+		}
 	}
 	upstreamModel := model.UpstreamModel
 	if strings.TrimSpace(upstreamModel) == "" {
 		upstreamModel = alias
 	}
-	apiKey := c.ApiKey
-	if model.ApiKey != nil {
-		apiKey = *model.ApiKey
+	apiKey := ""
+	if provider == ProviderChatCompletions {
+		apiKey = c.ApiKey
+		if model.ApiKey != nil {
+			apiKey = *model.ApiKey
+		}
 	}
 	contextWindow := 0
 	if model.ContextWindow != nil {
@@ -208,12 +232,15 @@ func (c *Config) ResolveModel(requested string) (ResolvedModel, bool) {
 	}
 
 	return ResolvedModel{
-		Alias:         alias,
-		Endpoint:      endpoint,
-		UpstreamModel: upstreamModel,
-		ApiKey:        apiKey,
-		ContextWindow: contextWindow,
-		MaxTokens:     maxTokens,
+		Alias:                alias,
+		Provider:             provider,
+		CompatibilityProfile: model.CompatibilityProfile,
+		ReasoningEffort:      model.ReasoningEffort,
+		Endpoint:             endpoint,
+		UpstreamModel:        upstreamModel,
+		ApiKey:               apiKey,
+		ContextWindow:        contextWindow,
+		MaxTokens:            maxTokens,
 	}, true
 }
 
@@ -251,14 +278,65 @@ func resolveLegacyMaxTokens(model string, cfg *Config) int {
 	return cfg.DefaultMaxTokens
 }
 
-func mergeIfExists(cfg *Config, path string) error {
+type modelLayer struct{ Models map[string]*modelLayerEntry }
+type modelLayerEntry struct {
+	Provider             *string
+	CompatibilityProfile *string
+	ReasoningEffort      *string
+	Endpoint             *string
+	UpstreamModel        *string
+	ApiKey               *string
+	ContextWindow        *int
+	MaxTokens            *int
+}
+
+func mergeLayer(cfg *Config, models map[string]*ModelConfig, path string, optional bool) error {
 	err := dd.MergeYAMLFile(cfg, path)
 	if err != nil {
 		var fileErr *dd.FileError
-		if errors.As(err, &fileErr) && fileErr.IsNotFound() {
+		if optional && errors.As(err, &fileErr) && fileErr.IsNotFound() {
 			return nil
 		}
 		return err
+	}
+	var layer modelLayer
+	if err := dd.BindYAMLFile(&layer, path); err != nil {
+		return err
+	}
+	for alias, entry := range layer.Models {
+		if entry == nil {
+			models[alias] = nil
+			continue
+		}
+		current := models[alias]
+		if current == nil {
+			current = &ModelConfig{}
+			models[alias] = current
+		}
+		if entry.Provider != nil {
+			current.Provider = entry.Provider
+		}
+		if entry.CompatibilityProfile != nil {
+			current.CompatibilityProfile = *entry.CompatibilityProfile
+		}
+		if entry.ReasoningEffort != nil {
+			current.ReasoningEffort = entry.ReasoningEffort
+		}
+		if entry.Endpoint != nil {
+			current.Endpoint = entry.Endpoint
+		}
+		if entry.UpstreamModel != nil {
+			current.UpstreamModel = *entry.UpstreamModel
+		}
+		if entry.ApiKey != nil {
+			current.ApiKey = entry.ApiKey
+		}
+		if entry.ContextWindow != nil {
+			current.ContextWindow = entry.ContextWindow
+		}
+		if entry.MaxTokens != nil {
+			current.MaxTokens = entry.MaxTokens
+		}
 	}
 	return nil
 }

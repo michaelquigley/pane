@@ -15,6 +15,24 @@ import (
 	"github.com/michaelquigley/pane/internal/mcp"
 )
 
+func TestSubscriptionAliasCannotSendBeforeAdapter(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
+	defer server.Close()
+	provider := config.ProviderCodex
+	cfg := &config.Config{Endpoint: server.URL, Model: "subscription", Listen: "127.0.0.1:8400", Models: map[string]*config.ModelConfig{"subscription": {Provider: &provider, UpstreamModel: "gpt-5.6-sol"}}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	a := NewAPI(cfg, llm.NewClient(cfg.Endpoint, cfg.Model, "", false), NewModelClients(cfg), mcp.NewManager(nil), nil)
+	request := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"model":"subscription","messages":[{"role":"user","content":"hello"}]}`))
+	recorder := httptest.NewRecorder()
+	a.handleChat(recorder, request)
+	if recorder.Code != http.StatusServiceUnavailable || calls != 0 {
+		t.Fatalf("subscription dispatched before adapter: status=%d calls=%d", recorder.Code, calls)
+	}
+}
+
 type upstreamCapture struct {
 	mu            sync.Mutex
 	calls         int
@@ -72,14 +90,14 @@ func TestRegistryRoutesAliasesThroughProductionClientMap(t *testing.T) {
 				MaxTokens:     apiIntPointer(24756),
 			},
 			"qwen@fortyfive": {
-				Endpoint:      fortyfiveServer.URL,
+				Endpoint:      apiStringPointer(fortyfiveServer.URL),
 				ApiKey:        apiStringPointer("fortyfive-key"),
 				UpstreamModel: "qwen",
 				ContextWindow: apiIntPointer(163840),
 				MaxTokens:     apiIntPointer(12000),
 			},
 			"qwen@unsecured": {
-				Endpoint:      unsecuredServer.URL,
+				Endpoint:      apiStringPointer(unsecuredServer.URL),
 				ApiKey:        apiStringPointer(""),
 				UpstreamModel: "qwen",
 			},

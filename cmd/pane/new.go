@@ -60,6 +60,19 @@ listen: 127.0.0.1:8400
 #    api_key: remote-token
 #    context_window: 163840
 #    max_tokens: 24756
+#  qwen3.8-27b@ninfer:
+#    compatibility_profile: qwen3.8-ninfer
+#    upstream_model: qwen3.8-27b
+#    reasoning_effort: low
+#  sol@subscription:
+#    provider: openai-codex
+#    upstream_model: gpt-5.6-sol
+#    reasoning_effort: medium
+#    # endpoint, api_key, and max_tokens must be omitted here.
+#    # subscription chat sending is not yet enabled.
+
+# omitted reasoning_effort leaves backend defaults unchanged. explicit effort
+# requires a supported compatibility_profile or upstream subscription model.
 
 # ask the upstream for token usage on every request (default true).
 # set false for an endpoint that rejects the stream_options field.

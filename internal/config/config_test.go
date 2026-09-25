@@ -317,7 +317,7 @@ func TestResolveLegacyModelKeepsExistingFallbacks(t *testing.T) {
 }
 
 func TestValidateRejectsInvalidModelRegistry(t *testing.T) {
-	valid := &ModelConfig{Endpoint: "http://model.example/v1", UpstreamModel: "upstream"}
+	valid := &ModelConfig{Endpoint: stringPointer("http://model.example/v1"), UpstreamModel: "upstream"}
 
 	tests := []struct {
 		name string
@@ -366,7 +366,7 @@ func TestValidateRejectsInvalidModelRegistry(t *testing.T) {
 				Listen: "127.0.0.1:8400",
 				Model:  "model",
 				Models: map[string]*ModelConfig{"model": {
-					Endpoint:      "http://model.example/v1",
+					Endpoint:      stringPointer("http://model.example/v1"),
 					ContextWindow: intPointer(0),
 				}},
 			},
@@ -378,7 +378,7 @@ func TestValidateRejectsInvalidModelRegistry(t *testing.T) {
 				Listen: "127.0.0.1:8400",
 				Model:  "model",
 				Models: map[string]*ModelConfig{"model": {
-					Endpoint:  "http://model.example/v1",
+					Endpoint:  stringPointer("http://model.example/v1"),
 					MaxTokens: intPointer(-1),
 				}},
 			},
@@ -396,6 +396,135 @@ func TestValidateRejectsInvalidModelRegistry(t *testing.T) {
 				t.Fatalf("expected error to contain %q, got %v", tt.want, err)
 			}
 		})
+	}
+}
+
+func stringPointer(value string) *string { return &value }
+
+func TestProviderValidation(t *testing.T) {
+	tests := []struct {
+		name  string
+		model ModelConfig
+		want  string
+	}{
+		{"subscription endpoint empty", ModelConfig{Provider: stringPointer(ProviderCodex), Endpoint: stringPointer("")}, "endpoint and api_key"},
+		{"subscription key empty", ModelConfig{Provider: stringPointer(ProviderCodex), ApiKey: stringPointer("")}, "endpoint and api_key"},
+		{"subscription max tokens", ModelConfig{Provider: stringPointer(ProviderCodex), MaxTokens: intPointer(1)}, "max_tokens"},
+		{"unknown provider", ModelConfig{Provider: stringPointer("other")}, "unknown provider"},
+		{"empty provider", ModelConfig{Provider: stringPointer("")}, "unknown provider"},
+		{"incompatible profile", ModelConfig{Provider: stringPointer(ProviderCodex), CompatibilityProfile: ProfileNinfer}, "compatibility_profile"},
+		{"unknown profile", ModelConfig{CompatibilityProfile: "other"}, "unknown compatibility_profile"},
+		{"generic effort", ModelConfig{ReasoningEffort: stringPointer("low")}, "requires a supported"},
+		{"qwen bad effort", ModelConfig{CompatibilityProfile: ProfileNinfer, ReasoningEffort: stringPointer("high")}, "unsupported reasoning_effort"},
+		{"astra none", ModelConfig{Provider: stringPointer(ProviderCodex), UpstreamModel: "gpt-6-astra", ReasoningEffort: stringPointer("none")}, "unsupported reasoning_effort"},
+		{"codex empty effort", ModelConfig{Provider: stringPointer(ProviderCodex), UpstreamModel: "gpt-5.6-sol", ReasoningEffort: stringPointer("")}, "unsupported reasoning_effort"},
+		{"unknown capability", ModelConfig{Provider: stringPointer(ProviderCodex), UpstreamModel: "other", ReasoningEffort: stringPointer("low")}, "no reasoning_effort capability"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := NewConfig()
+			cfg.Model = "alias"
+			cfg.Models = map[string]*ModelConfig{"alias": &tt.model}
+			if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("expected %q, got %v", tt.want, err)
+			}
+		})
+	}
+	for upstream, values := range codexEfforts {
+		for effort := range values {
+			t.Run(upstream+"/"+effort, func(t *testing.T) {
+				if supported, known := SupportsCodexEffort(upstream, effort); !supported || !known {
+					t.Fatal("capability lookup disagrees with validation table")
+				}
+				cfg := NewConfig()
+				cfg.Model = "alias"
+				cfg.Models = map[string]*ModelConfig{"alias": {Provider: stringPointer(ProviderCodex), UpstreamModel: upstream, ReasoningEffort: stringPointer(effort)}}
+				if err := cfg.Validate(); err != nil {
+					t.Fatal(err)
+				}
+				got, _ := cfg.ResolveModel("alias")
+				if got.Provider != ProviderCodex || got.Endpoint != "" || got.ApiKey != "" || got.ReasoningEffort == nil || *got.ReasoningEffort != effort {
+					t.Fatalf("bad resolution: %#v", got)
+				}
+			})
+		}
+	}
+	for _, profile := range []string{ProfileNinfer, ProfileLlamaCPP} {
+		for _, effort := range []string{"none", "low", "medium", "xhigh"} {
+			t.Run(profile+"/"+effort, func(t *testing.T) {
+				cfg := NewConfig()
+				cfg.Model = "alias"
+				cfg.Models = map[string]*ModelConfig{"alias": {CompatibilityProfile: profile, ReasoningEffort: stringPointer(effort)}}
+				if err := cfg.Validate(); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+	for _, upstream := range []string{"gpt-5.6-sol", "gpt-6-astra", "unlisted"} {
+		cfg := NewConfig()
+		cfg.Model = "alias"
+		cfg.Models = map[string]*ModelConfig{"alias": {Provider: stringPointer(ProviderCodex), UpstreamModel: upstream}}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("omitted effort on %s: %v", upstream, err)
+		}
+	}
+}
+
+func TestProviderCascadeRetainsPresence(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "global"))
+	t.Chdir(tmp)
+	global := filepath.Join(tmp, "global", "pane", "config.yaml")
+	if err := os.MkdirAll(filepath.Dir(global), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	base := "model: alias\nmodels:\n  alias:\n    provider: openai-codex\n    upstream_model: gpt-5.6-sol\n"
+	for _, field := range []string{"endpoint", "api_key", "reasoning_effort"} {
+		for _, layer := range []string{"global", "local", "flag"} {
+			t.Run(field+"/"+layer, func(t *testing.T) {
+				for _, p := range []string{global, filepath.Join(tmp, "pane.yaml")} {
+					_ = os.Remove(p)
+				}
+				content := base + "    " + field + ": \"\"\n"
+				path := global
+				if layer == "local" {
+					path = filepath.Join(tmp, "pane.yaml")
+					_ = os.WriteFile(global, []byte(base), 0o600)
+				}
+				if layer == "flag" {
+					path = filepath.Join(tmp, "override.yaml")
+					_ = os.WriteFile(global, []byte(base), 0o600)
+				}
+				if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				flag := ""
+				if layer == "flag" {
+					flag = path
+				}
+				_, err := Load(flag)
+				if err == nil {
+					t.Fatalf("explicit empty %s in %s was lost", field, layer)
+				}
+			})
+		}
+	}
+	if err := os.WriteFile(global, []byte(base), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.Remove(filepath.Join(tmp, "pane.yaml"))
+	if _, err := Load(""); err != nil {
+		t.Fatalf("omitted fields should pass: %v", err)
+	}
+	if err := os.WriteFile(global, []byte("model: alias\nmodels:\n  alias:\n    endpoint: \"\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "pane.yaml"), []byte(base), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(""); err == nil {
+		t.Fatal("lower-layer explicit endpoint disappeared after higher-layer provider override")
 	}
 }
 
