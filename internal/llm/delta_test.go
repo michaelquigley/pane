@@ -1,9 +1,10 @@
 package llm
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/michaelquigley/df/dd"
 )
 
 func TestDeltaUnmarshalToleratesReasoningSpellings(t *testing.T) {
@@ -41,15 +42,18 @@ func TestDeltaUnmarshalToleratesReasoningSpellings(t *testing.T) {
 			t.Parallel()
 
 			var delta Delta
-			if err := json.Unmarshal([]byte(tt.wire), &delta); err != nil {
+			if err := dd.BindJSON(&delta, []byte(tt.wire)); err != nil {
 				t.Fatalf("unmarshaling delta: %v", err)
 			}
-
-			if (delta.Reasoning == nil) != (tt.want == nil) {
-				t.Fatalf("expected reasoning %#v, got %#v", tt.want, delta.Reasoning)
+			reasoning := delta.Reasoning
+			if reasoning == nil {
+				reasoning = delta.ReasoningContent
 			}
-			if delta.Reasoning != nil && tt.want != nil && *delta.Reasoning != *tt.want {
-				t.Fatalf("expected reasoning %q, got %q", *tt.want, *delta.Reasoning)
+			if (reasoning == nil) != (tt.want == nil) {
+				t.Fatalf("expected reasoning %#v, got %#v", tt.want, reasoning)
+			}
+			if reasoning != nil && tt.want != nil && *reasoning != *tt.want {
+				t.Fatalf("expected reasoning %q, got %q", *tt.want, *reasoning)
 			}
 		})
 	}
@@ -61,7 +65,7 @@ func TestDeltaUnmarshalParsesContentAndToolCallsAlongsideReasoning(t *testing.T)
 	wire := `{"content":"hello","reasoning":"thinking","tool_calls":[{"index":0,"function":{"name":"read_file","arguments":"{\"path\":\"README.md\"}"}}]}`
 
 	var delta Delta
-	if err := json.Unmarshal([]byte(wire), &delta); err != nil {
+	if err := dd.BindJSON(&delta, []byte(wire)); err != nil {
 		t.Fatalf("unmarshaling delta: %v", err)
 	}
 
@@ -90,16 +94,16 @@ func TestDeltaRoundTripPreservesReasoning(t *testing.T) {
 		Reasoning: StringContent("thinking"),
 	}
 
-	data, err := json.Marshal(delta)
+	data, err := dd.UnbindJSON(delta)
 	if err != nil {
 		t.Fatalf("marshaling delta: %v", err)
 	}
-	if !strings.Contains(string(data), `"reasoning":"thinking"`) {
+	if !strings.Contains(string(data), `"reasoning": "thinking"`) {
 		t.Fatalf("expected marshaled delta to use the reasoning spelling, got %s", data)
 	}
 
 	var got Delta
-	if err := json.Unmarshal(data, &got); err != nil {
+	if err := dd.BindJSON(&got, data); err != nil {
 		t.Fatalf("unmarshaling delta: %v", err)
 	}
 

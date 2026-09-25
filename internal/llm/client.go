@@ -8,6 +8,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/michaelquigley/df/dd"
 )
 
 type Client struct {
@@ -53,7 +55,7 @@ func (c *Client) ListModels(ctx context.Context) (*ModelsResponse, error) {
 	}
 
 	var models ModelsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&models); err != nil {
+	if err := dd.BindJSONReader(&models, resp.Body); err != nil {
 		return nil, fmt.Errorf("decoding models response: %w", err)
 	}
 
@@ -66,9 +68,33 @@ func (c *Client) StreamChat(ctx context.Context, chatReq *ChatRequest) (*StreamR
 		chatReq.StreamOptions = &StreamOptions{IncludeUsage: true}
 	}
 
-	body, err := json.Marshal(chatReq)
+	request := chatWireRequest{
+		Model: chatReq.Model, Messages: chatReq.Messages, Stream: chatReq.Stream,
+		StreamOptions: chatReq.StreamOptions, MaxTokens: chatReq.MaxTokens,
+	}
+	for _, tool := range chatReq.Tools {
+		if tool.Function == nil {
+			return nil, fmt.Errorf("marshaling chat request: tool has no function")
+		}
+		_, err := dd.DecodeStrictJSON(tool.Function.Parameters)
+		if err != nil {
+			return nil, fmt.Errorf("marshaling chat request: invalid tool parameters: %w", err)
+		}
+		request.Tools = append(request.Tools, chatWireTool{
+			Type: tool.Type,
+			Function: chatWireFunction{
+				Name: tool.Function.Name, Description: tool.Function.Description,
+				Parameters: tool.Function.Parameters,
+			},
+		})
+	}
+	payload, err := dd.Unbind(request)
 	if err != nil {
-		return nil, fmt.Errorf("marshaling chat request: %w", err)
+		return nil, fmt.Errorf("unbinding chat request: %w", err)
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("encoding unbound chat request: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
@@ -90,4 +116,31 @@ func (c *Client) StreamChat(ctx context.Context, chatReq *ChatRequest) (*StreamR
 	}
 
 	return NewStreamReader(resp.Body), nil
+}
+
+type chatWireRequest struct {
+	Model         string
+	Messages      []Message
+	Tools         []chatWireTool `dd:",+omitempty"`
+	Stream        bool
+	StreamOptions *StreamOptions `dd:",+omitempty"`
+	MaxTokens     int            `dd:",+omitempty"`
+}
+
+type chatWireTool struct {
+	Type     string
+	Function chatWireFunction
+}
+
+type chatWireFunction struct {
+	Name        string
+	Description string
+	Parameters  json.RawMessage `dd:"-"`
+}
+
+func (f chatWireFunction) MarshalDd() (map[string]any, error) {
+	return map[string]any{
+		"name": f.Name, "description": f.Description,
+		"parameters": f.Parameters,
+	}, nil
 }

@@ -7,6 +7,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/michaelquigley/df/dd"
 )
 
 func TestStreamReaderReturnsEOFOnlyAfterDone(t *testing.T) {
@@ -154,9 +156,13 @@ func newStreamBody(body string) io.ReadCloser {
 func streamDataLine(t *testing.T, chunk StreamChunk) string {
 	t.Helper()
 
-	data, err := json.Marshal(chunk)
+	payload, err := dd.Unbind(chunk)
 	if err != nil {
 		t.Fatalf("marshaling stream chunk: %v", err)
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("encoding stream chunk map: %v", err)
 	}
 	return fmt.Sprintf("data: %s\n", data)
 }

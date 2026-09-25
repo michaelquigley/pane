@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/michaelquigley/df/dd"
 )
 
 type Writer struct {
@@ -24,7 +26,11 @@ func NewWriter(w http.ResponseWriter) (*Writer, error) {
 }
 
 func (s *Writer) Send(eventType string, data any) error {
-	payload, err := json.Marshal(data)
+	unbound, err := dd.Unbind(data)
+	if err != nil {
+		return fmt.Errorf("unbinding SSE data: %w", err)
+	}
+	payload, err := json.Marshal(unbound)
 	if err != nil {
 		return fmt.Errorf("marshaling SSE data: %w", err)
 	}
@@ -43,59 +49,60 @@ func (s *Writer) SendDone() error {
 	return nil
 }
 
-// Event data types for the pane SSE protocol.
+// event data types for the pane SSE protocol.
 
 type DeltaData struct {
-	Content string `json:"content"`
+	Content string `dd:"content"`
 }
 
 type ThinkingDeltaData struct {
-	Content string `json:"content"`
+	Content string `dd:"content"`
 }
 
 type UsageData struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens     int `dd:"prompt_tokens"`
+	CompletionTokens int `dd:"completion_tokens"`
+	TotalTokens      int `dd:"total_tokens"`
 }
 
 type ErrorData struct {
-	Code       string `json:"code"`
-	Message    string `json:"message"`
-	ToolCallID string `json:"tool_call_id,omitempty"`
+	Code       string `dd:"code"`
+	Message    string `dd:"message"`
+	ToolCallID string `dd:"tool_call_id,+omitempty"`
 }
 
 type ToolCallStartData struct {
-	Index int    `json:"index"`
-	ID    string `json:"id"`
-	Name  string `json:"name"`
+	Index int    `dd:"index"`
+	ID    string `dd:"id"`
+	Name  string `dd:"name"`
 }
 
 type ToolCallArgsData struct {
-	Index            int    `json:"index"`
-	ID               string `json:"id"`
-	ArgumentsPartial string `json:"arguments_partial"`
+	Index            int    `dd:"index"`
+	ID               string `dd:"id"`
+	ArgumentsPartial string `dd:"arguments_partial"`
 }
 
 type ToolCallExecutingData struct {
-	Index int    `json:"index"`
-	ID    string `json:"id"`
-	Name  string `json:"name"`
+	Index int    `dd:"index"`
+	ID    string `dd:"id"`
+	Name  string `dd:"name"`
 }
 
 type ToolCallApproveData struct {
-	Index     int    `json:"index"`
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
+	Index     int    `dd:"index"`
+	ID        string `dd:"id"`
+	Name      string `dd:"name"`
+	Arguments string `dd:"arguments"`
 }
 
 type ToolCallResultData struct {
-	Index      int    `json:"index"`
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Status     string `json:"status"`
-	ErrorCode  string `json:"error_code,omitempty"`
-	Content    string `json:"content"`
-	DurationMS int64  `json:"duration_ms"`
+	Index          int    `dd:"index"`
+	ID             string `dd:"id"`
+	Name           string `dd:"name"`
+	Status         string `dd:"status"`
+	ErrorCode      string `dd:"error_code,+omitempty"`
+	Content        string `dd:"content"`
+	DurationMS     int64  `dd:"duration_ms"`
+	ExecutionState string `dd:"execution_state,+omitempty"`
 }

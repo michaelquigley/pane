@@ -1,0 +1,13 @@
+data: {"type":"response.created","response":{"id":"resp_SYNTH_2","status":"in_progress"}}
+
+data: {"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_SYNTH_2","summary":[]}}
+
+data: {"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_SYNTH_2","summary":[],"encrypted_content":"ENC_SYNTH_2"}}
+
+data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc_SYNTH_2","call_id":"call_SYNTH_2","name":"add","arguments":""}}
+
+data: {"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"a\": 2,"}
+
+data: {"type":"response.function_call_arguments.delta","output_index":1,"delta":" \"b\": 2}"}
+
+data: {"type":"response.function_call_arguments.done","output_index":1,"arguments":"{\"a\": 2, \"b\": 2}"}

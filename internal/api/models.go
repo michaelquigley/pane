@@ -39,5 +39,5 @@ func (a *API) handleModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(models)
+	_ = dd.UnbindJSONWriter(models, w)
 }

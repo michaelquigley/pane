@@ -1,0 +1,10 @@
+data: {"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_SYNTH_5","summary":[]}}
+
+data: {"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_SYNTH_5","summary":[]}}
+
+data: {"type":"response.output_item.added","output_index":1,"item":{"type":"message","id":"msg_SYNTH_5","role":"assistant","content":[]}}
+
+data: {"type":"response.output_item.done","output_index":1,"item":{"type":"message","id":"msg_SYNTH_5","role":"assistant","status":"completed","content":[{"type":"output_text","text":"ok","annotations":[]}]}}
+
+data: {"type":"response.completed","response":{"id":"resp_SYNTH_5","status":"completed","output":[{"type":"reasoning","id":"rs_SYNTH_5","summary":[],"encrypted_content":"ENC_SYNTH_5"}]}}
+

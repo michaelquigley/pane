@@ -59,12 +59,14 @@ flowchart TD
     d --> e{"response contains tool_calls?"}
     e -- "no" --> f["6. stream the final assistant response back to the frontend via SSE"]
     e -- "yes" --> g["5a. route each tool_call to the appropriate MCP server"]
-    g --> h["5b. execute via MCP stdio, concurrently when the model emits multiple calls"]
+    g --> h["5b. execute via MCP stdio, one call at a time"]
     h --> i["5c. append tool results to messages"]
     i --> d
 ```
 
 two guards bound the loop. a hard iteration cap (`max_iterations` error if exceeded) prevents runaway loops, and a repeated-failure tracker watches for the same tool call failing again and again — after the threshold, the loop forces a final response by telling the model that tool calls are disabled and it must answer with what it has (`repeated_tool_failure` if the model persists anyway).
+
+the chat-completions adapter validates each model round before the loop can execute calls. a `tool_calls` finish must carry complete function metadata and object-valued arguments, followed by `[DONE]`; `stop` must carry no calls. a `length` or `content_filter` finish, missing `[DONE]`, conflicting finish, or malformed call fails the round without executing any of its calls. a received MCP reply, including an `IsError` reply, is known work; an error or missing reply after the MCP client call starts is an unknown outcome and stops the remaining batch and model rounds. the browser recovery record and reconciliation controls are still pending in stage 4 of the subscription-model work order.
 
 the frontend sends the full conversation history with each request. the chat path is stateless — it just proxies, executes tools, and streams back. it never reads the session store: a chat request's behavior depends on its own body and nothing an earlier request left behind.
 
@@ -225,6 +227,8 @@ a disk failure is a server fault and never a `4xx`: the frontend shows the decod
 
 this is the critical contract between backend and frontend. the backend emits a sequence of typed SSE events that let the frontend render the full tool-call loop in real time. event data types live in `internal/sse/writer.go`; the consuming state machine is `ui/src/hooks/useChat.ts`.
 
+the llm loop emits typed lifecycle events through an error-returning sink; the API translates them to SSE. a failed event write stops the loop, including before approval or dispatch and between calls in one batch. a tool may already have run when its result write fails, so the stream makes no completion claim after that failure.
+
 #### event types
 
 ```
@@ -247,7 +251,7 @@ event: tool_call_executing
 data: {"index": 0, "id": "tc_1", "name": "baabhive_hive_sql_3f9c2ab1d4"}
 
 event: tool_call_result
-data: {"index": 0, "id": "tc_1", "name": "baabhive_hive_sql_3f9c2ab1d4", "status": "complete", "content": "[{\"tag\": \"straight-pocket\", ...}]", "duration_ms": 12}
+data: {"index": 0, "id": "tc_1", "name": "baabhive_hive_sql_3f9c2ab1d4", "status": "complete", "content": "[{\"tag\": \"straight-pocket\", ...}]", "duration_ms": 12, "execution_state": "result_received"}
 
 event: round_complete
 data: {"assistant": {"role": "assistant", "content": null, "tool_calls": [...]}, "tool_messages": [{"role": "tool", "tool_call_id": "tc_1", "content": "..."}]}
@@ -259,7 +263,9 @@ event: done
 data: {}
 ```
 
-`round_complete` fires after each tool round, carrying the assistant message (with its tool calls) and the tool result messages — the frontend appends these to the conversation so the history it sends next turn matches what the model actually saw.
+`round_complete` fires after each completed tool round, carrying the assistant message (with its tool calls) and the tool result messages — the frontend appends these to the conversation so the history it sends next turn matches what the model actually saw. an unknown tool outcome emits `tool_call_result` with `execution_state: "unknown"` and a terminal `error`; it does not emit `round_complete` or synthesize an observed tool reply. `not_dispatched` marks failures known to occur before MCP invocation.
+
+request cancellation during approval or before executor invocation stops the current batch without a synthetic tool result or normal `round_complete`. results already received remain observable; cancellation after one result prevents later calls in the batch from dispatching.
 
 `thinking_delta` is the model's reasoning, streamed one token at a time and interleaved with `delta` and the tool-call events in upstream order. it is display-only by construction: the backend `llm.Message` type carries no reasoning field, so reasoning is never accumulated, never echoed in the `round_complete` payload, and never re-sent to the model. the upstream stream reader tolerates both known reasoning field spellings — `reasoning` (openai o-style) and `reasoning_content` (the vllm / sglang family) — and emits a single pane field regardless of which one appears on the wire.
 
@@ -287,24 +293,24 @@ tool-level failures are not stream errors — they arrive as `tool_call_result` 
 |---|---|
 | `denied` | user denied the approval prompt |
 | `approval_timeout` | no approval decision within 5 minutes |
-| `cancelled` | request context cancelled mid-execution |
-| `malformed_arguments` | LLM produced arguments that don't parse as JSON |
-| `execution_error` | the MCP server returned an error or the call timed out |
+| `execution_error` | a received MCP error reply or a known preflight failure; the `execution_state` field distinguishes them |
 
-the failure is injected into the messages as a `role: tool` result, and the model decides how to respond — it often recovers gracefully ("I wasn't able to run that query, but here's what I can tell you...").
+known failures are injected into the messages as `role: tool` results so the model can respond. malformed model arguments fail the entire model round before dispatch. an unknown MCP outcome stops the turn without injecting a tool result.
 
 stream-level errors use `event: error` and do close the stream:
 
 ```
 event: error
-data: {"code": "upstream_unreachable", "message": "connection refused"}
+data: {"code": "upstream", "message": "connection refused"}
 ```
 
 | code | meaning |
 |---|---|
-| `upstream_unreachable` | can't connect to the selected upstream |
-| `upstream_error` | the selected upstream returned an HTTP error or the stream broke mid-response |
-| `empty_response` | the stream completed but the model produced neither content nor tool calls — nothing was committed for the round. when the model spent its whole output budget thinking before producing anything, the message says so (a backend budget problem to fix, not a model failure) |
+| `upstream` | the selected upstream could not be reached or returned an HTTP error |
+| `transport`, `truncated`, `budget` | the stream failed, closed before `[DONE]`, or exceeded its 32 MiB round budget |
+| `protocol`, `incomplete` | invalid terminal evidence or an upstream `length`/`content_filter` finish; no calls from that round execute |
+| `tool_outcome_unknown` | MCP invocation may have run, but no correlated reply established its outcome |
+| `empty_response` | a valid `stop` finish carried neither content nor tool calls |
 | `repeated_tool_failure` | the model kept calling tools after the loop forced a final answer |
 | `max_iterations` | tool call loop exceeded the iteration cap |
 
@@ -331,13 +337,13 @@ flowchart TD
 
 #### multiple tool calls in one turn
 
-some models emit multiple tool calls in parallel. the backend handles this by:
-- emitting `tool_call_start` for each call as they arrive in the stream
-- executing all tool calls concurrently (goroutines)
-- emitting `tool_call_result` for each as they complete (order may differ from call order)
-- emitting `round_complete` and re-submitting once all are complete
+some models stream multiple tool calls in one round. the backend handles this by:
+- emitting `tool_call_start` when an indexed call first appears, with its name if available; a name arriving later updates the same canonical id and index without clearing streamed arguments
+- validating the complete round before any dispatch, then executing calls sequentially
+- emitting `tool_call_result` for each known outcome in call order
+- emitting `round_complete` and re-submitting only after all calls finish with known outcomes
 
-the frontend matches events by `id` to render each tool block independently.
+the frontend keys active previews by index and retains the canonical id, so a late-name update changes one tool block rather than creating another.
 
 ### MCP-to-OpenAI schema translation
 
@@ -678,8 +684,8 @@ the key principle: tool errors are not stream errors. when a tool fails, pane in
 
 | failure | backend behavior | frontend rendering |
 |---|---|---|
-| connection refused | emit `event: error` with `code: upstream_unreachable`, close stream | error shown in conversation |
-| HTTP 4xx/5xx or stream interrupted | emit `event: error` with `code: upstream_error`, close stream | streaming content preserved, error appended |
+| connection refused or HTTP 4xx/5xx | emit `event: error` with `code: upstream`, close stream | error shown in conversation |
+| stream read fails or closes before `[DONE]` | emit `event: error` with `code: transport` or `truncated`, respectively; close stream | streaming content preserved, error appended |
 | stream completes with an empty completion (no content, no tool calls) | emit `event: error` with `code: empty_response`, close stream; the message names the cause when the model hit its output token limit while thinking, and the empty round is not committed, so the history stays clean. the fix is a bigger output budget: the backend's default, or pane's `max_tokens` setting for the model | error shown in conversation |
 | malformed upstream SSE | log warning, skip malformed chunk, continue | invisible to user unless it corrupts the response |
 

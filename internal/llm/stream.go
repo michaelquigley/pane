@@ -2,26 +2,33 @@ package llm
 
 import (
 	"bufio"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/michaelquigley/df/dd"
 )
 
 var errStreamClosedBeforeDone = errors.New("upstream stream closed before '[DONE]'")
+var errStreamBudgetExceeded = errors.New("upstream round exceeds 32 MiB")
+
+const maxStreamRoundBytes = 32 * 1024 * 1024
 
 // StreamReader reads OpenAI-compatible SSE streaming responses.
 type StreamReader struct {
 	body   io.ReadCloser
 	reader *bufio.Reader
+	limit  *io.LimitedReader
 	done   bool
 }
 
 func NewStreamReader(body io.ReadCloser) *StreamReader {
+	limit := &io.LimitedReader{R: body, N: maxStreamRoundBytes + 1}
 	return &StreamReader{
 		body:   body,
-		reader: bufio.NewReader(body),
+		reader: bufio.NewReader(limit),
+		limit:  limit,
 	}
 }
 
@@ -34,6 +41,9 @@ func (s *StreamReader) Recv() (*StreamChunk, error) {
 
 	for {
 		line, err := s.reader.ReadString('\n')
+		if s.limit.N == 0 {
+			return nil, errStreamBudgetExceeded
+		}
 		if err != nil && err != io.EOF {
 			return nil, fmt.Errorf("reading stream: %w", err)
 		}
@@ -64,9 +74,25 @@ func (s *StreamReader) Recv() (*StreamChunk, error) {
 			return nil, io.EOF
 		}
 
-		var chunk StreamChunk
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+		decoded, err := dd.DecodeStrictJSON([]byte(data))
+		if err != nil {
 			return nil, fmt.Errorf("decoding stream chunk: %w", err)
+		}
+		var chunk StreamChunk
+		if err := dd.BindJSON(&chunk, []byte(data)); err != nil {
+			return nil, fmt.Errorf("binding stream chunk: %w", err)
+		}
+		if rawChoices, ok := decoded["choices"].([]any); ok {
+			for i, rawChoice := range rawChoices {
+				choice, ok := rawChoice.(map[string]any)
+				if !ok || i >= len(chunk.Choices) {
+					continue
+				}
+				_, chunk.Choices[i].DeprecatedFunctionCall = choice["function_call"]
+				if rawDelta, ok := choice["delta"].(map[string]any); ok {
+					_, chunk.Choices[i].Delta.DeprecatedFunctionCall = rawDelta["function_call"]
+				}
+			}
 		}
 
 		return &chunk, nil

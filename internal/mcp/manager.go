@@ -24,12 +24,13 @@ type Manager struct {
 }
 
 type ServerInstance struct {
-	name   string
-	config *config.ServerConfig
-	client *mcpclient.Client
-	tools  []mcptypes.Tool
-	status string
-	err    string
+	name     string
+	config   *config.ServerConfig
+	client   *mcpclient.Client
+	callTool func(context.Context, mcptypes.CallToolRequest) (*mcptypes.CallToolResult, error)
+	tools    []mcptypes.Tool
+	status   string
+	err      string
 }
 
 type toolRoute struct {
@@ -184,13 +185,13 @@ func (m *Manager) rebuildToolRoutesLocked() []ToolInfo {
 	return tools
 }
 
-func (m *Manager) GetEnabledTools() []llm.Tool {
+func (m *Manager) GetAllModelTools() []llm.Tool {
 	tools := m.GetAllTools()
-	enabled := make([]llm.Tool, 0, len(tools))
+	modelTools := make([]llm.Tool, 0, len(tools))
 	for _, t := range tools {
-		enabled = append(enabled, TranslateToOpenAI(t))
+		modelTools = append(modelTools, TranslateToOpenAI(t))
 	}
-	return enabled
+	return modelTools
 }
 
 func (m *Manager) GetServerStatuses() map[string]ServerStatus {
@@ -208,13 +209,19 @@ func (m *Manager) GetServerStatuses() map[string]ServerStatus {
 	return statuses
 }
 
-func (m *Manager) CallTool(ctx context.Context, callableName string, args map[string]any) (string, time.Duration, error) {
+func (m *Manager) CallTool(ctx context.Context, callableName string, args map[string]any) llm.ToolExecution {
 	si, route, ok := m.resolveToolRoute(callableName)
 	if !ok {
-		return "", 0, fmt.Errorf("unknown tool: '%s'", callableName)
+		return llm.ToolExecution{Dispatch: llm.NotDispatched, Err: fmt.Errorf("unknown tool: '%s'", callableName)}
 	}
 	if si.status != "running" {
-		return "", 0, fmt.Errorf("server '%s' is not running (status: '%s')", route.server, si.status)
+		return llm.ToolExecution{Dispatch: llm.NotDispatched, Err: fmt.Errorf("server '%s' is not running (status: '%s')", route.server, si.status)}
+	}
+	if ctx.Err() != nil {
+		return llm.ToolExecution{Dispatch: llm.NotDispatched, Err: ctx.Err()}
+	}
+	if si.client == nil && si.callTool == nil {
+		return llm.ToolExecution{Dispatch: llm.NotDispatched, Err: fmt.Errorf("server '%s' has no client", route.server)}
 	}
 
 	timeout := 30 * time.Second
@@ -232,11 +239,21 @@ func (m *Manager) CallTool(ctx context.Context, callableName string, args map[st
 	req.Params.Arguments = args
 
 	start := time.Now()
-	result, err := si.client.CallTool(callCtx, req)
+	call := si.callTool
+	if call == nil {
+		call = si.client.CallTool
+	}
+	if callCtx.Err() != nil {
+		return llm.ToolExecution{Dispatch: llm.NotDispatched, Err: callCtx.Err()}
+	}
+	result, err := call(callCtx, req)
 	duration := time.Since(start)
 
 	if err != nil {
-		return "", duration, fmt.Errorf("calling tool '%s': %w", callableName, err)
+		return llm.ToolExecution{Dispatch: llm.UnknownDispatch, Duration: duration, Err: fmt.Errorf("calling tool '%s': %w", callableName, err)}
+	}
+	if result == nil || result.Content == nil {
+		return llm.ToolExecution{Dispatch: llm.UnknownDispatch, Duration: duration, Err: fmt.Errorf("tool '%s' returned no reply", callableName)}
 	}
 
 	if result.IsError {
@@ -244,10 +261,10 @@ func (m *Manager) CallTool(ctx context.Context, callableName string, args map[st
 		if text == "" {
 			text = "tool returned an error"
 		}
-		return "", duration, fmt.Errorf("%s", text)
+		return llm.ToolExecution{Dispatch: llm.ResultReceived, Content: text, Duration: duration, IsError: true}
 	}
 
-	return extractText(result.Content), duration, nil
+	return llm.ToolExecution{Dispatch: llm.ResultReceived, Content: extractText(result.Content), Duration: duration}
 }
 
 func (m *Manager) NeedsApproval(callableName string) bool {

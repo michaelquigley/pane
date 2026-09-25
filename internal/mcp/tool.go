@@ -16,21 +16,21 @@ const (
 )
 
 type ToolInfo struct {
-	Server   string       `json:"server"`
-	Name     string       `json:"name"`
-	Function ToolFunction `json:"function"`
+	Server   string       `dd:"server"`
+	Name     string       `dd:"name"`
+	Function ToolFunction `dd:"function"`
 }
 
 type ToolFunction struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Parameters  json.RawMessage `json:"parameters"`
+	Name        string          `dd:"name"`
+	Description string          `dd:"description"`
+	Parameters  json.RawMessage `dd:"-"`
 }
 
 type ServerStatus struct {
-	Status     string `json:"status"`
-	ToolsCount int    `json:"tools_count"`
-	Error      string `json:"error,omitempty"`
+	Status     string `dd:"status"`
+	ToolsCount int    `dd:"tools_count"`
+	Error      string `dd:"error,+omitempty"`
 }
 
 func TranslateToOpenAI(info ToolInfo) llm.Tool {

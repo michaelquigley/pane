@@ -5,14 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/michaelquigley/df/dd"
 	"github.com/michaelquigley/df/dl"
-	"github.com/michaelquigley/pane/internal/sse"
 )
 
 const (
@@ -25,7 +23,7 @@ var toolCallIDSequence atomic.Uint64
 
 // ToolExecutor abstracts MCP tool execution to avoid circular imports.
 type ToolExecutor interface {
-	CallTool(ctx context.Context, qualifiedName string, args map[string]any) (string, time.Duration, error)
+	CallTool(ctx context.Context, qualifiedName string, args map[string]any) ToolExecution
 	NeedsApproval(qualifiedName string) bool
 }
 
@@ -43,16 +41,12 @@ type pendingToolCall struct {
 	Index     int
 }
 
-type roundCompleteData struct {
-	Assistant    Message   `json:"assistant"`
-	ToolMessages []Message `json:"tool_messages"`
-}
-
 type toolCallResult struct {
 	Content    string
 	DurationMS int64
 	Status     string
 	ErrorCode  string
+	Dispatch   Dispatch
 }
 
 type toolFailureTracker struct {
@@ -65,18 +59,9 @@ const (
 
 	toolCallErrorDenied             = "denied"
 	toolCallErrorApprovalTimeout    = "approval_timeout"
-	toolCallErrorCancelled          = "cancelled"
 	toolCallErrorMalformedArguments = "malformed_arguments"
 	toolCallErrorExecution          = "execution_error"
 )
-
-func emitToolCallStart(sw *sse.Writer, p *pendingToolCall) {
-	_ = sw.Send("tool_call_start", sse.ToolCallStartData{
-		Index: p.Index,
-		ID:    p.ID,
-		Name:  p.Name,
-	})
-}
 
 func nextToolCallID(iteration, index int) string {
 	seq := toolCallIDSequence.Add(1)
@@ -125,8 +110,8 @@ func normalizeToolArguments(arguments string) string {
 		return ""
 	}
 
-	var value any
-	if err := json.Unmarshal([]byte(trimmed), &value); err != nil {
+	value, err := dd.DecodeStrictJSON([]byte(trimmed))
+	if err != nil {
 		return trimmed
 	}
 
@@ -142,13 +127,13 @@ func normalizeToolArguments(arguments string) string {
 // content-only response.
 func RunToolLoop(
 	ctx context.Context,
-	client *Client,
+	client RoundAdapter,
 	messages []Message,
 	model string,
 	maxTokens int,
 	tools []Tool,
 	executor ToolExecutor,
-	sw *sse.Writer,
+	sink LoopEventSink,
 	approvals ApprovalRegistry,
 ) error {
 	failures := newToolFailureTracker()
@@ -178,130 +163,83 @@ func RunToolLoop(
 			})
 		}
 
-		req := &ChatRequest{
-			Model:     model,
-			Messages:  requestMessages,
-			MaxTokens: maxTokens,
+		request := RoundRequest{
+			Model: model, Messages: requestMessages, MaxTokens: maxTokens,
+			Iteration: iteration, Intent: IntentTools,
 		}
-		if len(tools) > 0 && !forcedFinalRequest {
-			req.Tools = tools
+		if forcedFinalRequest {
+			request.Intent = IntentFinal
+		} else if len(tools) > 0 {
+			request.Tools = tools
 		}
 
-		stream, err := client.StreamChat(ctx, req)
+		roundCtx, cancelRound := context.WithCancel(ctx)
+		var sinkErr error
+		final, err := client.Round(roundCtx, request, func(event RoundEvent) {
+			if sinkErr != nil {
+				return
+			}
+			var output LoopEvent
+			switch event.Kind {
+			case "delta":
+				output = LoopEvent{Kind: LoopDelta, Content: event.Content}
+			case "thinking_delta":
+				output = LoopEvent{Kind: LoopThinkingDelta, Content: event.Content}
+			case "tool_call_start":
+				output = LoopEvent{Kind: LoopToolCallStart, Call: event.Call}
+			case "tool_call_args":
+				output = LoopEvent{Kind: LoopToolCallArgs, Call: event.Call}
+			case "usage":
+				output = LoopEvent{Kind: LoopUsage, Usage: event.Usage}
+			default:
+				return
+			}
+			if sinkErr = sink.Emit(output); sinkErr != nil {
+				cancelRound()
+			}
+		})
+		cancelRound()
+		if sinkErr != nil {
+			return sinkErr
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if err != nil {
+			var roundErr *RoundError
 			code := "upstream_error"
-			if strings.Contains(err.Error(), "unreachable") {
-				code = "upstream_unreachable"
+			if errors.As(err, &roundErr) {
+				code = roundErr.Kind
 			}
-			_ = sw.Send("error", sse.ErrorData{Code: code, Message: err.Error()})
+			if sinkErr := emitLoopError(sink, code, err, ""); sinkErr != nil {
+				return sinkErr
+			}
 			return err
 		}
-
-		// accumulate the assistant response
-		var contentBuf strings.Builder
-		pending := make(map[int]*pendingToolCall)
-		var streamErr error
-		sawToolCallDelta := false
-		sawThinkingDelta := false
-		var finishReason string
-
-		for {
-			chunk, err := stream.Recv()
-			if err != nil {
-				if err == io.EOF {
-					break
-				}
-				streamErr = err
-				break
+		if err := validateRoundFinal(final); err != nil {
+			if sinkErr := emitLoopError(sink, "protocol", err, ""); sinkErr != nil {
+				return sinkErr
 			}
-
-			if len(chunk.Choices) > 0 {
-				delta := chunk.Choices[0].Delta
-
-				// the last non-empty finish reason the stream reported: it is
-				// what separates a truncated completion from a clean one
-				if chunk.Choices[0].FinishReason != nil && *chunk.Choices[0].FinishReason != "" {
-					finishReason = *chunk.Choices[0].FinishReason
-				}
-
-				// content tokens
-				if delta.Content != nil && *delta.Content != "" {
-					contentBuf.WriteString(*delta.Content)
-					_ = sw.Send("delta", sse.DeltaData{Content: *delta.Content})
-				}
-
-				// thinking tokens: pass-through only. llm.Message carries no
-				// reasoning field, so the re-sent history never echoes them.
-				if delta.Reasoning != nil && *delta.Reasoning != "" {
-					sawThinkingDelta = true
-					_ = sw.Send("thinking_delta", sse.ThinkingDeltaData{Content: *delta.Reasoning})
-				}
-
-				// tool call tokens
-				if len(delta.ToolCalls) > 0 {
-					sawToolCallDelta = true
-				}
-				for _, tc := range delta.ToolCalls {
-					idx := 0
-					if tc.Index != nil {
-						idx = *tc.Index
-					}
-
-					existing, ok := pending[idx]
-					if !ok {
-						existing = &pendingToolCall{
-							ID:    nextToolCallID(iteration, idx),
-							Name:  tc.Function.Name,
-							Index: idx,
-						}
-						pending[idx] = existing
-						emitToolCallStart(sw, existing)
-					}
-
-					// accumulate name if it arrives in later chunks
-					if tc.Function.Name != "" {
-						existing.Name = tc.Function.Name
-					}
-
-					// accumulate arguments
-					if tc.Function.Arguments != "" {
-						existing.Arguments += tc.Function.Arguments
-						_ = sw.Send("tool_call_args", sse.ToolCallArgsData{
-							Index:            existing.Index,
-							ID:               existing.ID,
-							ArgumentsPartial: tc.Function.Arguments,
-						})
-					}
-				}
-			}
-
-			if chunk.Usage != nil {
-				_ = sw.Send("usage", sse.UsageData{
-					PromptTokens:     chunk.Usage.PromptTokens,
-					CompletionTokens: chunk.Usage.CompletionTokens,
-					TotalTokens:      chunk.Usage.TotalTokens,
-				})
-			}
-		}
-		stream.Close()
-
-		if streamErr != nil {
-			dl.Errorf("stream error: %v", streamErr)
-			_ = sw.Send("error", sse.ErrorData{Code: "upstream_error", Message: streamErr.Error()})
-			return streamErr
-		}
-
-		if forcedFinalRequest && sawToolCallDelta {
-			err := fmt.Errorf("model returned tool calls after repeated tool failures")
-			_ = sw.Send("error", sse.ErrorData{Code: "repeated_tool_failure", Message: err.Error()})
 			return err
 		}
-
-		// discard incomplete tool calls (empty name from partial LLM deltas)
-		for idx, p := range pending {
-			if p.Name == "" {
-				dl.Debugf("discarding incomplete tool call at index %d (id=%q, args=%q)", idx, p.ID, p.Arguments)
-				delete(pending, idx)
+		if forcedFinalRequest && len(final.Calls) > 0 {
+			err := errors.New("model returned tool calls after repeated tool failures")
+			if sinkErr := emitLoopError(sink, "repeated_tool_failure", err, ""); sinkErr != nil {
+				return sinkErr
+			}
+			return err
+		}
+		pending := make([]*pendingToolCall, 0, len(final.Calls))
+		for _, call := range final.Calls {
+			pending = append(pending, &pendingToolCall{ID: call.ID, Name: call.Name, Arguments: call.Arguments, Index: call.Index})
+		}
+		for _, p := range pending {
+			if !offeredTool(tools, p.Name) {
+				err := fmt.Errorf("model returned unoffered tool '%s'", p.Name)
+				if sinkErr := emitLoopError(sink, "protocol", err, ""); sinkErr != nil {
+					return sinkErr
+				}
+				return err
 			}
 		}
 
@@ -313,18 +251,14 @@ func RunToolLoop(
 		// output budget (thinking, for reasoning models) before producing
 		// anything, which is a backend budget problem the operator can fix;
 		// anything else is a genuinely empty response.
-		content := contentBuf.String()
+		content := final.Content
 		if content == "" && len(pending) == 0 {
 			message := "upstream returned an empty response: no content and no tool calls"
-			if finishReason == "length" {
-				message = "the model reached its output token limit before producing any content or tool calls"
-				if sawThinkingDelta {
-					message += " -- it spent the whole budget thinking. raise the backend's output token cap (or the model's thinking budget) and retry"
-				}
-			}
 			err := errors.New(message)
 			dl.Errorf("iteration %d: %v", iteration, err)
-			_ = sw.Send("error", sse.ErrorData{Code: "empty_response", Message: err.Error()})
+			if sinkErr := emitLoopError(sink, "empty_response", err, ""); sinkErr != nil {
+				return sinkErr
+			}
 			return err
 		}
 
@@ -338,38 +272,39 @@ func RunToolLoop(
 		}
 		dl.Debugf("iteration %d: content=%q, pending=%d", iteration, content, len(pending))
 
-		// collect pending tool calls in stable index order
-		sortedPending := make([]*pendingToolCall, 0, len(pending))
-		for _, p := range pending {
-			sortedPending = append(sortedPending, p)
-		}
-		slices.SortFunc(sortedPending, func(a, b *pendingToolCall) int {
-			return a.Index - b.Index
-		})
-
-		// convert pending tool calls to finalized ToolCall slice
-		if len(sortedPending) > 0 {
-			assistantMsg.ToolCalls = make([]ToolCall, 0, len(sortedPending))
-			for _, p := range sortedPending {
-				assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, ToolCall{
-					ID:   p.ID,
-					Type: "function",
-					Function: ToolCallFunction{
-						Name:      p.Name,
-						Arguments: p.Arguments,
-					},
-				})
+		if len(pending) > 0 {
+			assistantMsg.ToolCalls = make([]ToolCall, 0, len(pending))
+			for _, p := range pending {
+				assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, ToolCall{ID: p.ID, Type: "function", Function: ToolCallFunction{Name: p.Name, Arguments: p.Arguments}})
 			}
 		}
 
 		messages = append(messages, assistantMsg)
 
-		toolMessages := make([]Message, 0, len(sortedPending))
+		toolMessages := make([]Message, 0, len(pending))
 
 		// execute each tool call
-		for _, p := range sortedPending {
-			result := executeSingleTool(ctx, p, executor, sw, approvals)
+		for _, p := range pending {
+			result, err := executeSingleTool(ctx, p, executor, sink, approvals)
+			if err != nil {
+				return err
+			}
+			if result.Dispatch == NotDispatched {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+			}
 
+			if result.Dispatch == UnknownDispatch {
+				if err := emitToolResult(sink, p, result); err != nil {
+					return err
+				}
+				err := fmt.Errorf("tool outcome unknown for '%s'", p.Name)
+				if sinkErr := emitLoopError(sink, "tool_outcome_unknown", err, p.ID); sinkErr != nil {
+					return sinkErr
+				}
+				return err
+			}
 			resultContent := result.Content
 			toolMsg := Message{
 				Role:       "tool",
@@ -379,39 +314,72 @@ func RunToolLoop(
 			toolMessages = append(toolMessages, toolMsg)
 			messages = append(messages, toolMsg)
 
-			_ = sw.Send("tool_call_result", sse.ToolCallResultData{
-				Index:      p.Index,
-				ID:         p.ID,
-				Name:       p.Name,
-				Status:     result.Status,
-				ErrorCode:  result.ErrorCode,
-				Content:    result.Content,
-				DurationMS: result.DurationMS,
-			})
+			if err := emitToolResult(sink, p, result); err != nil {
+				return err
+			}
 
 			if failures.observe(p, result) {
 				forceFinalResponse = true
 			}
 		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 
-		_ = sw.Send("round_complete", roundCompleteData{
-			Assistant:    assistantMsg,
-			ToolMessages: toolMessages,
-		})
+		if err := sink.Emit(LoopEvent{Kind: LoopRoundComplete, Round: &LoopRound{
+			Assistant: assistantMsg, ToolMessages: toolMessages,
+		}}); err != nil {
+			return err
+		}
 
 		// no tool calls — we're done
 		if len(pending) == 0 {
-			_ = sw.SendDone()
-			return nil
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			return sink.Emit(LoopEvent{Kind: LoopDone})
 		}
 	}
 
 	// exhausted max iterations
-	_ = sw.Send("error", sse.ErrorData{
-		Code:    "max_iterations",
-		Message: fmt.Sprintf("tool call loop exceeded %d iterations", maxToolLoopIterations),
+	err := fmt.Errorf("tool call loop exceeded %d iterations", maxToolLoopIterations)
+	if sinkErr := emitLoopError(sink, "max_iterations", err, ""); sinkErr != nil {
+		return sinkErr
+	}
+	return err
+}
+
+func emitLoopError(sink LoopEventSink, code string, cause error, toolCallID string) error {
+	return sink.Emit(LoopEvent{Kind: LoopError, Error: &LoopErrorData{
+		Code: code, Message: cause.Error(), ToolCallID: toolCallID,
+	}})
+}
+
+func emitToolResult(sink LoopEventSink, call *pendingToolCall, result toolCallResult) error {
+	return sink.Emit(LoopEvent{Kind: LoopToolCallResult,
+		Call: RoundCall{Index: call.Index, ID: call.ID, Name: call.Name},
+		Result: &LoopToolResult{Status: result.Status, ErrorCode: result.ErrorCode,
+			Content: result.Content, DurationMS: result.DurationMS, Dispatch: result.Dispatch},
 	})
-	return fmt.Errorf("tool call loop exceeded %d iterations", maxToolLoopIterations)
+}
+
+func validateRoundFinal(final RoundFinal) error {
+	if final.Finish != "stop" && final.Finish != "tool_calls" {
+		return roundProtocol("invalid normalized finish")
+	}
+	if final.Finish == "stop" && len(final.Calls) != 0 || final.Finish == "tool_calls" && len(final.Calls) == 0 {
+		return roundProtocol("normalized finish does not match calls")
+	}
+	ids := make(map[string]bool, len(final.Calls))
+	indices := make(map[int]bool, len(final.Calls))
+	for _, call := range final.Calls {
+		if call.Index < 0 || call.ID == "" || call.Name == "" || ids[call.ID] || indices[call.Index] || !objectJSON(call.Arguments) {
+			return roundProtocol("invalid finalized tool call")
+		}
+		ids[call.ID] = true
+		indices[call.Index] = true
+	}
+	return nil
 }
 
 // dropEmptyAssistants removes assistant messages that carry neither content
@@ -436,22 +404,30 @@ func executeSingleTool(
 	ctx context.Context,
 	p *pendingToolCall,
 	executor ToolExecutor,
-	sw *sse.Writer,
+	sink LoopEventSink,
 	approvals ApprovalRegistry,
-) toolCallResult {
+) (toolCallResult, error) {
+	if ctx.Err() != nil {
+		return toolCallResult{}, ctx.Err()
+	}
+	args, err := dd.DecodeStrictJSON([]byte(p.Arguments))
+	if err != nil {
+		return toolCallResult{Content: "error: malformed arguments", Status: toolCallStatusError, ErrorCode: toolCallErrorMalformedArguments, Dispatch: NotDispatched}, nil
+	}
 	// approval gate
 	if executor.NeedsApproval(p.Name) {
-		_ = sw.Send("tool_call_approve", sse.ToolCallApproveData{
-			Index:     p.Index,
-			ID:        p.ID,
-			Name:      p.Name,
-			Arguments: p.Arguments,
-		})
+		if approvals == nil {
+			return toolCallResult{Content: "approval unavailable", Status: toolCallStatusError, ErrorCode: toolCallErrorDenied, Dispatch: NotDispatched}, nil
+		}
+		ch := approvals.Register(p.ID)
+		defer approvals.Unregister(p.ID)
+		if err := sink.Emit(LoopEvent{Kind: LoopToolCallApprove, Call: RoundCall{
+			Index: p.Index, ID: p.ID, Name: p.Name, Arguments: p.Arguments,
+		}}); err != nil {
+			return toolCallResult{}, err
+		}
 
-		if approvals != nil {
-			ch := approvals.Register(p.ID)
-			defer approvals.Unregister(p.ID)
-
+		{
 			select {
 			case approved := <-ch:
 				if !approved {
@@ -459,57 +435,76 @@ func executeSingleTool(
 						Content:   "tool call denied by user",
 						Status:    toolCallStatusError,
 						ErrorCode: toolCallErrorDenied,
-					}
+						Dispatch:  NotDispatched,
+					}, nil
 				}
 			case <-time.After(5 * time.Minute):
 				return toolCallResult{
 					Content:   "tool call approval timed out",
 					Status:    toolCallStatusError,
 					ErrorCode: toolCallErrorApprovalTimeout,
-				}
+					Dispatch:  NotDispatched,
+				}, nil
 			case <-ctx.Done():
-				return toolCallResult{
-					Content:   "request cancelled",
-					Status:    toolCallStatusError,
-					ErrorCode: toolCallErrorCancelled,
-				}
+				return toolCallResult{}, ctx.Err()
 			}
 		}
 	}
-
-	_ = sw.Send("tool_call_executing", sse.ToolCallExecutingData{
-		Index: p.Index,
-		ID:    p.ID,
-		Name:  p.Name,
-	})
-
-	// parse arguments
-	var args map[string]any
-	if p.Arguments != "" {
-		if err := json.Unmarshal([]byte(p.Arguments), &args); err != nil {
-			dl.Warnf("malformed tool call arguments for %s: %v", p.Name, err)
-			return toolCallResult{
-				Content:   fmt.Sprintf("error: malformed arguments: %v", err),
-				Status:    toolCallStatusError,
-				ErrorCode: toolCallErrorMalformedArguments,
-			}
-		}
+	if ctx.Err() != nil {
+		return toolCallResult{}, ctx.Err()
 	}
 
-	content, duration, err := executor.CallTool(ctx, p.Name, args)
-	if err != nil {
-		dl.Warnf("tool call %s failed: %v", p.Name, err)
+	if err := sink.Emit(LoopEvent{Kind: LoopToolCallExecuting, Call: RoundCall{
+		Index: p.Index, ID: p.ID, Name: p.Name,
+	}}); err != nil {
+		return toolCallResult{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return toolCallResult{}, err
+	}
+
+	execution := executor.CallTool(ctx, p.Name, args)
+	if execution.Dispatch == NotDispatched && ctx.Err() != nil {
+		return toolCallResult{}, ctx.Err()
+	}
+	if execution.Dispatch != NotDispatched && execution.Dispatch != ResultReceived && execution.Dispatch != UnknownDispatch {
+		execution.Dispatch = UnknownDispatch
+		execution.Err = errors.New("executor omitted dispatch evidence")
+	}
+	if execution.Dispatch == UnknownDispatch {
+		diagnostic := "execution outcome unknown"
+		if execution.Err != nil {
+			diagnostic = execution.Err.Error()
+		}
 		return toolCallResult{
-			Content:    fmt.Sprintf("error: %v", err),
-			DurationMS: duration.Milliseconds(),
+			Content:    "error: " + diagnostic,
+			DurationMS: execution.Duration.Milliseconds(),
 			Status:     toolCallStatusError,
 			ErrorCode:  toolCallErrorExecution,
+			Dispatch:   UnknownDispatch,
+		}, nil
+	}
+	if execution.Err != nil || execution.IsError || execution.Dispatch == NotDispatched {
+		content := execution.Content
+		if content == "" && execution.Err != nil {
+			content = fmt.Sprintf("error: %v", execution.Err)
 		}
+		return toolCallResult{Content: content, DurationMS: execution.Duration.Milliseconds(), Status: toolCallStatusError, ErrorCode: toolCallErrorExecution, Dispatch: execution.Dispatch}, nil
 	}
 
 	return toolCallResult{
-		Content:    content,
-		DurationMS: duration.Milliseconds(),
+		Content:    execution.Content,
+		DurationMS: execution.Duration.Milliseconds(),
 		Status:     toolCallStatusComplete,
+		Dispatch:   ResultReceived,
+	}, nil
+}
+
+func offeredTool(tools []Tool, name string) bool {
+	for _, tool := range tools {
+		if tool.Function != nil && tool.Function.Name == name {
+			return true
+		}
 	}
+	return false
 }

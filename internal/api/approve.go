@@ -1,10 +1,11 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"sync"
+
+	"github.com/michaelquigley/df/dd"
 )
 
 type ApprovalRegistry struct {
@@ -48,13 +49,13 @@ func (r *ApprovalRegistry) Unregister(toolCallID string) {
 }
 
 type approveRequest struct {
-	ID       string `json:"id"`
-	Approved bool   `json:"approved"`
+	ID       string `dd:"id"`
+	Approved bool   `dd:"approved"`
 }
 
 func (a *API) handleApprove(w http.ResponseWriter, r *http.Request) {
 	var req approveRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := dd.BindJSONReader(&req, r.Body); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}

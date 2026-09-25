@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react'
 import type { Message, ActiveToolCall, Conversation, SSEEvent, ToolCallResult, SystemPromptMode, UsageRecord } from '../types'
 import { createSSEParser } from '../lib/sse'
 import { usageRecordFromEvent } from '../lib/usageRecord'
+import { applyToolPreview, getOrCreateActiveToolCall } from '../lib/toolPreview'
 
 interface SendMessageOptions {
   model: string
@@ -118,19 +119,12 @@ export function useChat() {
             }
 
             case 'tool_call_start': {
-              const tc = getOrCreateActiveToolCall(toolCallsAccum, event.index)
-              if (event.id) tc.id = event.id
-              if (event.name) tc.name = event.name
-              setActiveToolCalls(new Map(toolCallsAccum))
+              setActiveToolCalls(applyToolPreview(toolCallsAccum, event))
               break
             }
 
             case 'tool_call_args': {
-              const tc = getOrCreateActiveToolCall(toolCallsAccum, event.index)
-              if (event.id) tc.id = event.id
-              tc.argumentsSoFar += event.arguments_partial
-              tc.status = 'args_streaming'
-              setActiveToolCalls(new Map(toolCallsAccum))
+              setActiveToolCalls(applyToolPreview(toolCallsAccum, event))
               break
             }
 
@@ -232,7 +226,7 @@ export function useChat() {
         setStreamingThinking('')
         setActiveToolCalls(new Map())
         if (!controller.signal.aborted && !sawErrorEvent) {
-          setError('Connection lost')
+          setError('connection lost')
         }
       }
     } catch (e) {
@@ -340,23 +334,6 @@ export function useChat() {
     denyToolCall,
     abort,
   }
-}
-
-function getOrCreateActiveToolCall(
-  toolCallsAccum: Map<number, ActiveToolCall>,
-  index: number,
-): ActiveToolCall {
-  let tc = toolCallsAccum.get(index)
-  if (!tc) {
-    tc = {
-      index,
-      name: '',
-      status: 'loading',
-      argumentsSoFar: '',
-    }
-    toolCallsAccum.set(index, tc)
-  }
-  return tc
 }
 
 function attachToolCallResults(

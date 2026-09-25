@@ -51,9 +51,9 @@ func (a *API) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tools := a.mcp.GetEnabledTools()
+	tools := a.mcp.GetAllModelTools()
 
-	if err := llm.RunToolLoop(r.Context(), llmClient, req.Messages, model.UpstreamModel, model.MaxTokens, tools, a.mcp, sw, a.approvals); err != nil {
+	if err := llm.RunToolLoop(r.Context(), llmClient, req.Messages, model.UpstreamModel, model.MaxTokens, tools, a.mcp, chatEventSink{writer: sw}, a.approvals); err != nil {
 		dl.Errorf("tool loop: %v", err)
 	}
 }

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/michaelquigley/df/dd"
 	"github.com/michaelquigley/pane/internal/config"
 	"github.com/michaelquigley/pane/internal/llm"
 	"github.com/michaelquigley/pane/internal/mcp"
@@ -220,7 +220,7 @@ func TestHandleChatAcceptsNullAssistantContentAfterToolCall(t *testing.T) {
 	}
 
 	var forwarded llm.ChatRequest
-	if err := json.Unmarshal([]byte(body), &forwarded); err != nil {
+	if err := dd.BindJSON(&forwarded, []byte(body)); err != nil {
 		t.Fatalf("decoding upstream request body: %v", err)
 	}
 	if len(forwarded.Messages) != 4 {

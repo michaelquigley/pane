@@ -1,0 +1,20 @@
+data: {"type":"response.created","response":{"id":"resp_SYNTH_1","status":"in_progress"}}
+
+data: {"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_SYNTH_1","summary":[]}}
+
+data: {"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"thinking about it"}
+
+data: {"type":"response.reasoning_summary_part.done","output_index":0}
+
+data: {"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_SYNTH_1","summary":[{"type":"summary_text","text":"thinking about it"}],"encrypted_content":"ENC_SYNTH_1"}}
+
+data: {"type":"response.output_item.added","output_index":1,"item":{"type":"message","id":"msg_SYNTH_1","role":"assistant","status":"in_progress","content":[]}}
+
+data: {"type":"response.output_text.delta","output_index":1,"delta":"four"}
+
+data: {"type":"response.output_text.delta","output_index":1,"delta":"."}
+
+data: {"type":"response.output_item.done","output_index":1,"item":{"type":"message","id":"msg_SYNTH_1","role":"assistant","status":"completed","phase":"final_answer","content":[{"type":"output_text","text":"four.","annotations":[]}]}}
+
+data: {"type":"response.completed","response":{"id":"resp_SYNTH_1","status":"completed","output":[],"usage":{"input_tokens":120,"input_tokens_details":{"cached_tokens":64},"output_tokens":30,"output_tokens_details":{"reasoning_tokens":22},"total_tokens":150}}}
+

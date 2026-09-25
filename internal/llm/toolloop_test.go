@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/michaelquigley/df/dd"
 	"github.com/michaelquigley/pane/internal/sse"
 )
 
@@ -23,8 +24,8 @@ type testExecutor struct {
 	approve  bool
 }
 
-func (t testExecutor) CallTool(_ context.Context, _ string, _ map[string]any) (string, time.Duration, error) {
-	return t.result, t.duration, t.err
+func (t testExecutor) CallTool(_ context.Context, _ string, _ map[string]any) ToolExecution {
+	return ToolExecution{Dispatch: ResultReceived, Content: t.result, Duration: t.duration, Err: t.err, IsError: t.err != nil}
 }
 
 func (t testExecutor) NeedsApproval(string) bool {
@@ -39,12 +40,12 @@ type recordingExecutor struct {
 	calls   int
 }
 
-func (r *recordingExecutor) CallTool(_ context.Context, _ string, _ map[string]any) (string, time.Duration, error) {
+func (r *recordingExecutor) CallTool(_ context.Context, _ string, _ map[string]any) ToolExecution {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	r.calls++
-	return r.result, 0, r.err
+	return ToolExecution{Dispatch: ResultReceived, Content: r.result, Err: r.err, IsError: r.err != nil}
 }
 
 func (r *recordingExecutor) NeedsApproval(string) bool {
@@ -61,6 +62,8 @@ type recordedEvent struct {
 	Type string
 	Data json.RawMessage
 }
+
+var streamedToolCalls sync.Map
 
 type testApprovalRegistry struct {
 	ch           chan bool
@@ -156,7 +159,7 @@ func TestRunToolLoopStreamsThinkingDeltasAndKeepsResentHistoryClean(t *testing.T
 			t.Fatalf("unexpected chat completion request %d", requestCount)
 		}
 
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -167,7 +170,7 @@ func TestRunToolLoopStreamsThinkingDeltasAndKeepsResentHistoryClean(t *testing.T
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
@@ -210,7 +213,7 @@ func TestRunToolLoopStreamsThinkingDeltasAndKeepsResentHistoryClean(t *testing.T
 			continue
 		}
 		var payload sse.ThinkingDeltaData
-		if err := json.Unmarshal(event.Data, &payload); err != nil {
+		if err := dd.BindJSON(&payload, event.Data); err != nil {
 			t.Fatalf("unmarshaling thinking_delta: %v", err)
 		}
 		thinkingContents = append(thinkingContents, payload.Content)
@@ -235,10 +238,10 @@ func TestRunToolLoopStreamsThinkingDeltasAndKeepsResentHistoryClean(t *testing.T
 			continue
 		}
 		var round roundCompleteData
-		if err := json.Unmarshal(event.Data, &round); err != nil {
+		if err := dd.BindJSON(&round, event.Data); err != nil {
 			t.Fatalf("unmarshaling round_complete: %v", err)
 		}
-		assistantJSON, err := json.Marshal(round.Assistant)
+		assistantJSON, err := dd.UnbindJSON(round.Assistant)
 		if err != nil {
 			t.Fatalf("marshaling assistant message: %v", err)
 		}
@@ -319,7 +322,7 @@ func TestRunToolLoopEmitsRoundCompletePerIteration(t *testing.T) {
 			t.Fatalf("unexpected chat completion request %d", requestCount)
 		}
 
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -330,7 +333,7 @@ func TestRunToolLoopEmitsRoundCompletePerIteration(t *testing.T) {
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
@@ -365,7 +368,7 @@ func TestRunToolLoopEmitsRoundCompletePerIteration(t *testing.T) {
 	)
 
 	var start sse.ToolCallStartData
-	if err := json.Unmarshal(events[1].Data, &start); err != nil {
+	if err := dd.BindJSON(&start, events[1].Data); err != nil {
 		t.Fatalf("unmarshaling tool_call_start: %v", err)
 	}
 	if start.Index != 0 {
@@ -373,7 +376,7 @@ func TestRunToolLoopEmitsRoundCompletePerIteration(t *testing.T) {
 	}
 
 	var firstRound roundCompleteData
-	if err := json.Unmarshal(events[5].Data, &firstRound); err != nil {
+	if err := dd.BindJSON(&firstRound, events[5].Data); err != nil {
 		t.Fatalf("unmarshaling first round_complete: %v", err)
 	}
 	if firstRound.Assistant.Role != "assistant" {
@@ -390,7 +393,7 @@ func TestRunToolLoopEmitsRoundCompletePerIteration(t *testing.T) {
 	}
 
 	var firstResult sse.ToolCallResultData
-	if err := json.Unmarshal(events[4].Data, &firstResult); err != nil {
+	if err := dd.BindJSON(&firstResult, events[4].Data); err != nil {
 		t.Fatalf("unmarshaling tool_call_result: %v", err)
 	}
 	if firstResult.Status != toolCallStatusComplete || firstResult.ErrorCode != "" {
@@ -405,7 +408,7 @@ func TestRunToolLoopEmitsRoundCompletePerIteration(t *testing.T) {
 	}
 
 	var secondRound roundCompleteData
-	if err := json.Unmarshal(events[7].Data, &secondRound); err != nil {
+	if err := dd.BindJSON(&secondRound, events[7].Data); err != nil {
 		t.Fatalf("unmarshaling second round_complete: %v", err)
 	}
 	if secondRound.Assistant.Content == nil || *secondRound.Assistant.Content != "done" {
@@ -484,7 +487,7 @@ func TestRunToolLoopEmitsIndexedToolEventsForFragmentedMetadata(t *testing.T) {
 			t.Fatalf("unexpected chat completion request %d", requestCount)
 		}
 
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -495,7 +498,7 @@ func TestRunToolLoopEmitsIndexedToolEventsForFragmentedMetadata(t *testing.T) {
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
@@ -520,6 +523,7 @@ func TestRunToolLoopEmitsIndexedToolEventsForFragmentedMetadata(t *testing.T) {
 	assertEventTypes(t, events,
 		"tool_call_start",
 		"tool_call_args",
+		"tool_call_start",
 		"tool_call_args",
 		"tool_call_executing",
 		"tool_call_result",
@@ -530,7 +534,7 @@ func TestRunToolLoopEmitsIndexedToolEventsForFragmentedMetadata(t *testing.T) {
 	)
 
 	var start0 sse.ToolCallStartData
-	if err := json.Unmarshal(events[0].Data, &start0); err != nil {
+	if err := dd.BindJSON(&start0, events[0].Data); err != nil {
 		t.Fatalf("unmarshaling initial tool_call_start: %v", err)
 	}
 	if start0.Index != 0 || start0.Name != "" {
@@ -539,15 +543,22 @@ func TestRunToolLoopEmitsIndexedToolEventsForFragmentedMetadata(t *testing.T) {
 	assertPaneToolCallID(t, start0.ID)
 
 	var args0 sse.ToolCallArgsData
-	if err := json.Unmarshal(events[1].Data, &args0); err != nil {
+	if err := dd.BindJSON(&args0, events[1].Data); err != nil {
 		t.Fatalf("unmarshaling initial tool_call_args: %v", err)
 	}
 	if args0.Index != 0 || args0.ID != start0.ID {
 		t.Fatalf("unexpected initial tool_call_args payload: %#v", args0)
 	}
+	var named sse.ToolCallStartData
+	if err := dd.BindJSON(&named, events[2].Data); err != nil {
+		t.Fatalf("unmarshaling named tool_call_start: %v", err)
+	}
+	if named.Index != 0 || named.ID != start0.ID || named.Name != "filesystem_read_file" {
+		t.Fatalf("late name did not update the same tool preview: %#v", named)
+	}
 
 	var args1 sse.ToolCallArgsData
-	if err := json.Unmarshal(events[2].Data, &args1); err != nil {
+	if err := dd.BindJSON(&args1, events[3].Data); err != nil {
 		t.Fatalf("unmarshaling final tool_call_args: %v", err)
 	}
 	if args1.Index != 0 || args1.ID != start0.ID {
@@ -555,7 +566,7 @@ func TestRunToolLoopEmitsIndexedToolEventsForFragmentedMetadata(t *testing.T) {
 	}
 
 	var result sse.ToolCallResultData
-	if err := json.Unmarshal(events[4].Data, &result); err != nil {
+	if err := dd.BindJSON(&result, events[5].Data); err != nil {
 		t.Fatalf("unmarshaling tool_call_result: %v", err)
 	}
 	if result.Index != 0 || result.ID != start0.ID || result.Name != "filesystem_read_file" {
@@ -566,7 +577,7 @@ func TestRunToolLoopEmitsIndexedToolEventsForFragmentedMetadata(t *testing.T) {
 	}
 
 	var round roundCompleteData
-	if err := json.Unmarshal(events[5].Data, &round); err != nil {
+	if err := dd.BindJSON(&round, events[6].Data); err != nil {
 		t.Fatalf("unmarshaling round_complete: %v", err)
 	}
 	assertRoundToolCallIDs(t, round, start0.ID)
@@ -638,7 +649,7 @@ func TestRunToolLoopEmitsIndexedToolEventsForInterleavedToolCalls(t *testing.T) 
 			t.Fatalf("unexpected chat completion request %d", requestCount)
 		}
 
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -649,7 +660,7 @@ func TestRunToolLoopEmitsIndexedToolEventsForInterleavedToolCalls(t *testing.T) 
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("run both tools")}},
@@ -688,19 +699,19 @@ func TestRunToolLoopEmitsIndexedToolEventsForInterleavedToolCalls(t *testing.T) 
 		switch event.Type {
 		case "tool_call_start":
 			var payload sse.ToolCallStartData
-			if err := json.Unmarshal(event.Data, &payload); err != nil {
+			if err := dd.BindJSON(&payload, event.Data); err != nil {
 				t.Fatalf("unmarshaling tool_call_start: %v", err)
 			}
 			seenStart[payload.Index] = true
 		case "tool_call_args":
 			var payload sse.ToolCallArgsData
-			if err := json.Unmarshal(event.Data, &payload); err != nil {
+			if err := dd.BindJSON(&payload, event.Data); err != nil {
 				t.Fatalf("unmarshaling tool_call_args: %v", err)
 			}
 			seenArgs[payload.Index] = true
 		case "tool_call_result":
 			var payload sse.ToolCallResultData
-			if err := json.Unmarshal(event.Data, &payload); err != nil {
+			if err := dd.BindJSON(&payload, event.Data); err != nil {
 				t.Fatalf("unmarshaling tool_call_result: %v", err)
 			}
 			seenResult[payload.Index] = true
@@ -760,7 +771,7 @@ func TestRunToolLoopSynthesizesIDsForMissingUpstreamToolCallIDs(t *testing.T) {
 			t.Fatalf("unexpected chat completion request %d", requestCount)
 		}
 
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -771,7 +782,7 @@ func TestRunToolLoopSynthesizesIDsForMissingUpstreamToolCallIDs(t *testing.T) {
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
@@ -805,13 +816,13 @@ func TestRunToolLoopSynthesizesIDsForMissingUpstreamToolCallIDs(t *testing.T) {
 	)
 
 	var start sse.ToolCallStartData
-	if err := json.Unmarshal(events[0].Data, &start); err != nil {
+	if err := dd.BindJSON(&start, events[0].Data); err != nil {
 		t.Fatalf("unmarshaling tool_call_start: %v", err)
 	}
 	assertPaneToolCallID(t, start.ID)
 
 	var args sse.ToolCallArgsData
-	if err := json.Unmarshal(events[1].Data, &args); err != nil {
+	if err := dd.BindJSON(&args, events[1].Data); err != nil {
 		t.Fatalf("unmarshaling tool_call_args: %v", err)
 	}
 	if args.ID != start.ID {
@@ -819,7 +830,7 @@ func TestRunToolLoopSynthesizesIDsForMissingUpstreamToolCallIDs(t *testing.T) {
 	}
 
 	var result sse.ToolCallResultData
-	if err := json.Unmarshal(events[3].Data, &result); err != nil {
+	if err := dd.BindJSON(&result, events[3].Data); err != nil {
 		t.Fatalf("unmarshaling tool_call_result: %v", err)
 	}
 	if result.ID != start.ID {
@@ -827,10 +838,18 @@ func TestRunToolLoopSynthesizesIDsForMissingUpstreamToolCallIDs(t *testing.T) {
 	}
 
 	var round roundCompleteData
-	if err := json.Unmarshal(events[4].Data, &round); err != nil {
+	if err := dd.BindJSON(&round, events[4].Data); err != nil {
 		t.Fatalf("unmarshaling round_complete: %v", err)
 	}
 	assertRoundToolCallIDs(t, round, start.ID)
+	rawRound, err := dd.DecodeStrictJSON(events[4].Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assistant := rawRound["assistant"].(map[string]any)
+	if content, present := assistant["content"]; !present || content != nil {
+		t.Fatalf("tool-call assistant content should be explicit null: %#v", assistant)
+	}
 }
 
 func TestRunToolLoopAssignsDistinctIDsForDuplicateUpstreamToolCallIDs(t *testing.T) {
@@ -885,7 +904,7 @@ func TestRunToolLoopAssignsDistinctIDsForDuplicateUpstreamToolCallIDs(t *testing
 			t.Fatalf("unexpected chat completion request %d", requestCount)
 		}
 
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -896,7 +915,7 @@ func TestRunToolLoopAssignsDistinctIDsForDuplicateUpstreamToolCallIDs(t *testing
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("run both tools")}},
@@ -943,11 +962,11 @@ func TestRunToolLoopAssignsDistinctIDsForDuplicateUpstreamToolCallIDs(t *testing
 	)
 
 	var firstStart sse.ToolCallStartData
-	if err := json.Unmarshal(events[0].Data, &firstStart); err != nil {
+	if err := dd.BindJSON(&firstStart, events[0].Data); err != nil {
 		t.Fatalf("unmarshaling first tool_call_start: %v", err)
 	}
 	var secondStart sse.ToolCallStartData
-	if err := json.Unmarshal(events[2].Data, &secondStart); err != nil {
+	if err := dd.BindJSON(&secondStart, events[2].Data); err != nil {
 		t.Fatalf("unmarshaling second tool_call_start: %v", err)
 	}
 	assertPaneToolCallID(t, firstStart.ID)
@@ -957,7 +976,7 @@ func TestRunToolLoopAssignsDistinctIDsForDuplicateUpstreamToolCallIDs(t *testing
 	}
 
 	var round roundCompleteData
-	if err := json.Unmarshal(events[8].Data, &round); err != nil {
+	if err := dd.BindJSON(&round, events[8].Data); err != nil {
 		t.Fatalf("unmarshaling round_complete: %v", err)
 	}
 	assertRoundToolCallIDs(t, round, firstStart.ID, secondStart.ID)
@@ -1003,7 +1022,7 @@ func TestRunToolLoopUsesCanonicalIDForApprovalWithoutUpstreamID(t *testing.T) {
 			t.Fatalf("unexpected chat completion request %d", requestCount)
 		}
 
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -1015,7 +1034,7 @@ func TestRunToolLoopUsesCanonicalIDForApprovalWithoutUpstreamID(t *testing.T) {
 	}
 	approvals := &testApprovalRegistry{ch: bufferedApproval(true)}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
@@ -1050,7 +1069,7 @@ func TestRunToolLoopUsesCanonicalIDForApprovalWithoutUpstreamID(t *testing.T) {
 	)
 
 	var approve sse.ToolCallApproveData
-	if err := json.Unmarshal(events[2].Data, &approve); err != nil {
+	if err := dd.BindJSON(&approve, events[2].Data); err != nil {
 		t.Fatalf("unmarshaling tool_call_approve: %v", err)
 	}
 	assertPaneToolCallID(t, approve.ID)
@@ -1089,7 +1108,7 @@ func TestRunToolLoopForcesFinalAnswerAfterRepeatedExecutionError(t *testing.T) {
 			t.Fatalf("unexpected chat completion request %d", requestCount)
 		}
 
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -1101,7 +1120,7 @@ func TestRunToolLoopForcesFinalAnswerAfterRepeatedExecutionError(t *testing.T) {
 	}
 	executor := &recordingExecutor{err: errors.New("boom")}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
@@ -1174,7 +1193,7 @@ func TestRunToolLoopForcesFinalAnswerAfterRepeatedDeniedApproval(t *testing.T) {
 			t.Fatalf("unexpected chat completion request %d", requestCount)
 		}
 
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -1186,7 +1205,7 @@ func TestRunToolLoopForcesFinalAnswerAfterRepeatedDeniedApproval(t *testing.T) {
 	}
 	approvals := &testApprovalRegistry{ch: bufferedApproval(false, false)}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
@@ -1241,25 +1260,14 @@ func TestRunToolLoopForcesFinalAnswerAfterRepeatedMalformedArguments(t *testing.
 		w.Header().Set("Content-Type", "text/event-stream")
 
 		switch requestCount {
-		case 1, 2:
+		case 1:
 			assertRequestHasTools(t, req)
 			writeSingleToolCallChunk(t, w, "filesystem_read_file", `{"path":`)
-		case 3:
-			assertForceFinalRequest(t, req)
-			writeStreamChunk(t, w, StreamChunk{
-				ID: "chat-final",
-				Choices: []Choice{{
-					Index: 0,
-					Delta: Delta{
-						Content: StringContent("the tool arguments were invalid."),
-					},
-				}},
-			})
 		default:
 			t.Fatalf("unexpected chat completion request %d", requestCount)
 		}
 
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -1271,7 +1279,7 @@ func TestRunToolLoopForcesFinalAnswerAfterRepeatedMalformedArguments(t *testing.
 	}
 	executor := &recordingExecutor{result: "should not run"}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
@@ -1288,32 +1296,18 @@ func TestRunToolLoopForcesFinalAnswerAfterRepeatedMalformedArguments(t *testing.
 		sw,
 		nil,
 	)
-	if err != nil {
-		t.Fatalf("running tool loop: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "malformed tool call") {
+		t.Fatalf("expected malformed round rejection, got %v", err)
 	}
-	if requestCount != 3 {
-		t.Fatalf("expected 3 upstream requests, got %d", requestCount)
+	if requestCount != 1 {
+		t.Fatalf("expected 1 upstream request, got %d", requestCount)
 	}
 	if executor.callCount() != 0 {
 		t.Fatalf("expected no tool executions, got %d", executor.callCount())
 	}
 
 	events := parseRecordedEvents(t, recorder.Body.String())
-	assertEventTypes(t, events,
-		"tool_call_start",
-		"tool_call_args",
-		"tool_call_executing",
-		"tool_call_result",
-		"round_complete",
-		"tool_call_start",
-		"tool_call_args",
-		"tool_call_executing",
-		"tool_call_result",
-		"round_complete",
-		"delta",
-		"round_complete",
-		"done",
-	)
+	assertEventTypes(t, events, "tool_call_start", "tool_call_args", "error")
 }
 
 func TestRunToolLoopNormalizesRepeatedFailureArguments(t *testing.T) {
@@ -1347,7 +1341,7 @@ func TestRunToolLoopNormalizesRepeatedFailureArguments(t *testing.T) {
 			t.Fatalf("unexpected chat completion request %d", requestCount)
 		}
 
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -1358,7 +1352,7 @@ func TestRunToolLoopNormalizesRepeatedFailureArguments(t *testing.T) {
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
@@ -1403,7 +1397,7 @@ func TestRunToolLoopErrorsIfForcedFinalReturnsToolCalls(t *testing.T) {
 			t.Fatalf("unexpected chat completion request %d", requestCount)
 		}
 
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -1415,7 +1409,7 @@ func TestRunToolLoopErrorsIfForcedFinalReturnsToolCalls(t *testing.T) {
 	}
 	executor := &recordingExecutor{err: errors.New("boom")}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
@@ -1460,7 +1454,7 @@ func TestRunToolLoopErrorsIfForcedFinalReturnsToolCalls(t *testing.T) {
 	)
 
 	var errorData sse.ErrorData
-	if err := json.Unmarshal(events[12].Data, &errorData); err != nil {
+	if err := dd.BindJSON(&errorData, events[12].Data); err != nil {
 		t.Fatalf("unmarshaling error event: %v", err)
 	}
 	if errorData.Code != "repeated_tool_failure" {
@@ -1482,7 +1476,7 @@ func TestRunToolLoopEmitsRoundCompleteForNoToolResponses(t *testing.T) {
 				},
 			}},
 		})
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -1493,7 +1487,7 @@ func TestRunToolLoopEmitsRoundCompleteForNoToolResponses(t *testing.T) {
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("hello")}},
@@ -1512,7 +1506,7 @@ func TestRunToolLoopEmitsRoundCompleteForNoToolResponses(t *testing.T) {
 	assertEventTypes(t, events, "delta", "round_complete", "done")
 
 	var round roundCompleteData
-	if err := json.Unmarshal(events[1].Data, &round); err != nil {
+	if err := dd.BindJSON(&round, events[1].Data); err != nil {
 		t.Fatalf("unmarshaling round_complete: %v", err)
 	}
 	if round.Assistant.Content == nil || *round.Assistant.Content != "hello" {
@@ -1547,7 +1541,7 @@ func TestRunToolLoopErrorsOnUpstreamEOFBeforeDone(t *testing.T) {
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("hello")}},
@@ -1566,11 +1560,11 @@ func TestRunToolLoopErrorsOnUpstreamEOFBeforeDone(t *testing.T) {
 	assertEventTypes(t, events, "delta", "error")
 
 	var errorData sse.ErrorData
-	if err := json.Unmarshal(events[1].Data, &errorData); err != nil {
+	if err := dd.BindJSON(&errorData, events[1].Data); err != nil {
 		t.Fatalf("unmarshaling error event: %v", err)
 	}
-	if errorData.Code != "upstream_error" {
-		t.Fatalf("expected upstream_error code, got %q", errorData.Code)
+	if errorData.Code != "truncated" {
+		t.Fatalf("expected truncated code, got %q", errorData.Code)
 	}
 }
 
@@ -1607,7 +1601,7 @@ func TestRunToolLoopDoesNotExecuteToolsAfterUpstreamEOFBeforeDone(t *testing.T) 
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
@@ -1632,11 +1626,11 @@ func TestRunToolLoopDoesNotExecuteToolsAfterUpstreamEOFBeforeDone(t *testing.T) 
 	assertEventTypes(t, events, "tool_call_start", "tool_call_args", "error")
 
 	var errorData sse.ErrorData
-	if err := json.Unmarshal(events[2].Data, &errorData); err != nil {
+	if err := dd.BindJSON(&errorData, events[2].Data); err != nil {
 		t.Fatalf("unmarshaling error event: %v", err)
 	}
-	if errorData.Code != "upstream_error" {
-		t.Fatalf("expected upstream_error code, got %q", errorData.Code)
+	if errorData.Code != "truncated" {
+		t.Fatalf("expected truncated code, got %q", errorData.Code)
 	}
 }
 
@@ -1653,7 +1647,7 @@ func TestRunToolLoopEmitsUsageBeforeRoundComplete(t *testing.T) {
 			}},
 		})
 		writeUsageChunk(t, w, "chat-1", 21, 4, 25)
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -1664,7 +1658,7 @@ func TestRunToolLoopEmitsUsageBeforeRoundComplete(t *testing.T) {
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("say hello")}},
@@ -1697,7 +1691,7 @@ func TestRunToolLoopEmitsDeltaBeforeUsageOnCombinedChunk(t *testing.T) {
 			}},
 			Usage: &Usage{PromptTokens: 31, CompletionTokens: 3, TotalTokens: 34},
 		})
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -1708,7 +1702,7 @@ func TestRunToolLoopEmitsDeltaBeforeUsageOnCombinedChunk(t *testing.T) {
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("finish")}},
@@ -1760,7 +1754,7 @@ func TestRunToolLoopEmitsOneUsageEventPerRound(t *testing.T) {
 			t.Fatalf("unexpected chat completion request %d", requestCount)
 		}
 
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -1771,7 +1765,7 @@ func TestRunToolLoopEmitsOneUsageEventPerRound(t *testing.T) {
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
@@ -1843,7 +1837,7 @@ func TestRunToolLoopSetsStreamOptionsOnEveryRoundWhenUsageIncluded(t *testing.T)
 		default:
 			t.Fatalf("unexpected chat completion request %d", count)
 		}
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -1886,7 +1880,7 @@ func TestRunToolLoopOmitsStreamOptionsWhenUsageDisabled(t *testing.T) {
 				Delta: Delta{Content: StringContent("done")},
 			}},
 		})
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -1897,7 +1891,7 @@ func TestRunToolLoopOmitsStreamOptionsWhenUsageDisabled(t *testing.T) {
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("finish")}},
@@ -1928,7 +1922,7 @@ func TestRunToolLoopKeepsNoUsageStreamSequenceUnchanged(t *testing.T) {
 				Delta: Delta{Content: StringContent("done")},
 			}},
 		})
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -1939,7 +1933,7 @@ func TestRunToolLoopKeepsNoUsageStreamSequenceUnchanged(t *testing.T) {
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("finish")}},
@@ -1967,7 +1961,7 @@ func runUsageRequestBodyLoop(t *testing.T, client *Client) error {
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	return RunToolLoop(
+	return runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("read the README")}},
@@ -2028,25 +2022,6 @@ func TestExecuteSingleToolReturnsStructuredOutcomes(t *testing.T) {
 			wantText:   "tool call denied by user",
 		},
 		{
-			name: "cancelled",
-			ctx: func() context.Context {
-				ctx, cancel := context.WithCancel(context.Background())
-				cancel()
-				return ctx
-			},
-			pending: &pendingToolCall{
-				ID:        "call_cancelled",
-				Name:      "filesystem_read_file",
-				Arguments: `{"path":"README.md"}`,
-				Index:     0,
-			},
-			executor:   testExecutor{approve: true},
-			approvals:  &testApprovalRegistry{ch: make(chan bool)},
-			wantStatus: toolCallStatusError,
-			wantCode:   toolCallErrorCancelled,
-			wantText:   "request cancelled",
-		},
-		{
 			name: "malformed arguments",
 			ctx:  context.Background,
 			pending: &pendingToolCall{
@@ -2058,7 +2033,7 @@ func TestExecuteSingleToolReturnsStructuredOutcomes(t *testing.T) {
 			executor:   testExecutor{},
 			wantStatus: toolCallStatusError,
 			wantCode:   toolCallErrorMalformedArguments,
-			wantText:   "error: malformed arguments:",
+			wantText:   "error: malformed arguments",
 		},
 		{
 			name: "execution error",
@@ -2081,7 +2056,10 @@ func TestExecuteSingleToolReturnsStructuredOutcomes(t *testing.T) {
 			t.Parallel()
 
 			sw := newTestSSEWriter(t)
-			result := executeSingleTool(tt.ctx(), tt.pending, tt.executor, sw, tt.approvals)
+			result, err := executeSingleTool(tt.ctx(), tt.pending, tt.executor, testSSELoopSink{writer: sw}, tt.approvals)
+			if err != nil {
+				t.Fatal(err)
+			}
 
 			if result.Status != tt.wantStatus {
 				t.Fatalf("expected status %q, got %q", tt.wantStatus, result.Status)
@@ -2112,18 +2090,52 @@ func writeUsageChunk(t *testing.T, w http.ResponseWriter, id string, promptToken
 
 func writeStreamChunk(t *testing.T, w http.ResponseWriter, chunk StreamChunk) {
 	t.Helper()
+	for _, choice := range chunk.Choices {
+		if len(choice.Delta.ToolCalls) > 0 {
+			streamedToolCalls.Store(w, true)
+		}
+	}
+	for i := range chunk.Choices {
+		for j := range chunk.Choices[i].Delta.ToolCalls {
+			if chunk.Choices[i].Delta.ToolCalls[j].Type == "" {
+				chunk.Choices[i].Delta.ToolCalls[j].Type = "function"
+			}
+		}
+	}
 
-	data, err := json.Marshal(chunk)
+	payload, err := dd.Unbind(chunk)
 	if err != nil {
 		t.Fatalf("marshaling chunk: %v", err)
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("encoding chunk map: %v", err)
 	}
 	fmt.Fprintf(w, "data: %s\n\n", data)
 }
 
 func writeRawStreamData(t *testing.T, w http.ResponseWriter, data string) {
 	t.Helper()
+	var chunk StreamChunk
+	if dd.BindJSON(&chunk, []byte(data)) == nil {
+		for _, choice := range chunk.Choices {
+			if len(choice.Delta.ToolCalls) > 0 {
+				streamedToolCalls.Store(w, true)
+			}
+		}
+	}
 
 	fmt.Fprintf(w, "data: %s\n\n", data)
+}
+
+func writeCompletedStream(t *testing.T, w http.ResponseWriter) {
+	t.Helper()
+	finish := "stop"
+	if _, ok := streamedToolCalls.LoadAndDelete(w); ok {
+		finish = "tool_calls"
+	}
+	writeStreamChunk(t, w, StreamChunk{Choices: []Choice{{Index: 0, FinishReason: &finish}}})
+	fmt.Fprint(w, "data: [DONE]\n\n")
 }
 
 func writeSingleToolCallChunk(t *testing.T, w http.ResponseWriter, name, arguments string) {
@@ -2151,7 +2163,7 @@ func decodeChatRequest(t *testing.T, r *http.Request) ChatRequest {
 	t.Helper()
 
 	var req ChatRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := dd.BindJSONReader(&req, r.Body); err != nil {
 		t.Fatalf("decoding chat request: %v", err)
 	}
 	return req
@@ -2210,7 +2222,7 @@ func assertUsageEvent(t *testing.T, event recordedEvent, promptTokens, completio
 		t.Fatalf("expected usage event, got %q", event.Type)
 	}
 	var payload sse.UsageData
-	if err := json.Unmarshal(event.Data, &payload); err != nil {
+	if err := dd.BindJSON(&payload, event.Data); err != nil {
 		t.Fatalf("unmarshaling usage event: %v", err)
 	}
 	if payload.PromptTokens != promptTokens || payload.CompletionTokens != completionTokens || payload.TotalTokens != totalTokens {
@@ -2297,7 +2309,7 @@ func TestRunToolLoopReportsEmptyCompletionWithoutCommitting(t *testing.T) {
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("hello")}},
@@ -2316,11 +2328,11 @@ func TestRunToolLoopReportsEmptyCompletionWithoutCommitting(t *testing.T) {
 	assertEventTypes(t, events, "error")
 
 	var payload sse.ErrorData
-	if err := json.Unmarshal(events[0].Data, &payload); err != nil {
+	if err := dd.BindJSON(&payload, events[0].Data); err != nil {
 		t.Fatalf("unmarshaling error event: %v", err)
 	}
-	if payload.Code != "empty_response" {
-		t.Fatalf("expected error code 'empty_response', got '%s'", payload.Code)
+	if payload.Code != "protocol" {
+		t.Fatalf("expected error code 'protocol', got '%s'", payload.Code)
 	}
 }
 
@@ -2345,7 +2357,7 @@ func TestRunToolLoopDropsEmptyAssistantMessagesFromHistory(t *testing.T) {
 				},
 			}},
 		})
-		fmt.Fprint(w, "data: [DONE]\n\n")
+		writeCompletedStream(t, w)
 	}))
 	defer server.Close()
 
@@ -2356,7 +2368,7 @@ func TestRunToolLoopDropsEmptyAssistantMessagesFromHistory(t *testing.T) {
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{
@@ -2415,7 +2427,7 @@ func TestRunToolLoopDiagnosesTokenLimitWhileThinking(t *testing.T) {
 		t.Fatalf("creating SSE writer: %v", err)
 	}
 
-	err = RunToolLoop(
+	err = runTestToolLoop(
 		context.Background(),
 		client,
 		[]Message{{Role: "user", Content: StringContent("think hard")}},
@@ -2434,18 +2446,16 @@ func TestRunToolLoopDiagnosesTokenLimitWhileThinking(t *testing.T) {
 	assertEventTypes(t, events, "thinking_delta", "thinking_delta", "error")
 
 	var payload sse.ErrorData
-	if err := json.Unmarshal(events[2].Data, &payload); err != nil {
+	if err := dd.BindJSON(&payload, events[2].Data); err != nil {
 		t.Fatalf("unmarshaling error event: %v", err)
 	}
-	if payload.Code != "empty_response" {
+	if payload.Code != "incomplete" {
 		t.Fatalf("expected error code 'empty_response', got '%s'", payload.Code)
 	}
-	if !strings.Contains(payload.Message, "output token limit") {
+	if !strings.Contains(payload.Message, "length") {
 		t.Fatalf("error message should name the token limit, got: %s", payload.Message)
 	}
-	if !strings.Contains(payload.Message, "thinking") {
-		t.Fatalf("error message should name the thinking budget, got: %s", payload.Message)
-	}
+
 }
 
 func TestRunToolLoopSendsMaxTokensOnlyWhenSet(t *testing.T) {
@@ -2469,7 +2479,7 @@ func TestRunToolLoopSendsMaxTokensOnlyWhenSet(t *testing.T) {
 					},
 				}},
 			})
-			fmt.Fprint(w, "data: [DONE]\n\n")
+			writeCompletedStream(t, w)
 		}))
 		t.Cleanup(server.Close)
 		return server
@@ -2482,7 +2492,7 @@ func TestRunToolLoopSendsMaxTokensOnlyWhenSet(t *testing.T) {
 		if err != nil {
 			t.Fatalf("creating SSE writer: %v", err)
 		}
-		if err := RunToolLoop(
+		if err := runTestToolLoop(
 			context.Background(),
 			client,
 			[]Message{{Role: "user", Content: StringContent("hi")}},

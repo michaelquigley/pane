@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/michaelquigley/df/dd"
 	"github.com/michaelquigley/pane/internal/config"
 	"github.com/michaelquigley/pane/internal/llm"
 	"github.com/michaelquigley/pane/internal/mcp"
@@ -23,7 +24,7 @@ type upstreamCapture struct {
 
 func (c *upstreamCapture) handler(w http.ResponseWriter, r *http.Request) {
 	var request llm.ChatRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+	if err := dd.BindJSONReader(&request, r.Body); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
@@ -164,7 +165,7 @@ func TestRegistryModelsAndConfigComeFromProfiles(t *testing.T) {
 		t.Fatalf("registry model listing contacted upstream %d times", upstreamCalls)
 	}
 	var models llm.ModelsResponse
-	if err := json.NewDecoder(modelsRecorder.Body).Decode(&models); err != nil {
+	if err := dd.BindJSONReader(&models, modelsRecorder.Body); err != nil {
 		t.Fatalf("decoding models: %v", err)
 	}
 	if len(models.Data) != 3 || models.Data[0].ID != "a-model" || models.Data[1].ID != "m-model" || models.Data[2].ID != "z-model" {
@@ -211,7 +212,7 @@ func TestLegacyModelsStillProxyUpstream(t *testing.T) {
 	a.handleModels(recorder, httptest.NewRequest(http.MethodGet, "/api/models", nil))
 
 	var models llm.ModelsResponse
-	if err := json.NewDecoder(recorder.Body).Decode(&models); err != nil {
+	if err := dd.BindJSONReader(&models, recorder.Body); err != nil {
 		t.Fatalf("decoding models: %v", err)
 	}
 	if len(models.Data) != 1 || models.Data[0].ID != "legacy-model" || models.Data[0].OwnedBy != "upstream" {
