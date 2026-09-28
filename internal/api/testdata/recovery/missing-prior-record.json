@@ -1,0 +1,53 @@
+{
+  "expect": "invalid_recovery",
+  "body": {
+    "model": "qwen",
+    "messages": [
+      {
+        "role": "user",
+        "content": "write",
+        "turn_id": "t1"
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "turn_id": "t1",
+        "round_id": "t1-r1",
+        "tool_calls": [
+          {
+            "id": "c1",
+            "type": "function",
+            "function": {
+              "name": "write_note",
+              "arguments": "{\"text\":\"hello\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "pane recovery: execution outcome unknown; no result was received.\noperator note: unsure.",
+        "tool_call_id": "c1",
+        "turn_id": "t1",
+        "round_id": "t1-r1",
+        "recovery_placeholder": "unknown"
+      },
+      {
+        "role": "user",
+        "content": "operator reconciliation: c1: unsure.",
+        "turn_id": "t1"
+      },
+      {
+        "role": "user",
+        "content": "next",
+        "turn_id": "t2"
+      }
+    ],
+    "system_prompt_mode": "default",
+    "turn_id": "t2",
+    "recovery": {
+      "v": 1,
+      "turns": []
+    }
+  }
+}

@@ -21,6 +21,8 @@ interface Props {
   defaultModel: string
   modelOverride: string
   onModelChange: (model: string) => void
+  modelLocked: boolean
+  promptLocked: boolean
   mode: SystemPromptMode
   customValue: string
   defaultValue: string
@@ -50,6 +52,8 @@ export function Toolbar({
   defaultModel,
   modelOverride,
   onModelChange,
+  modelLocked,
+  promptLocked,
   mode,
   customValue,
   defaultValue,
@@ -113,6 +117,7 @@ export function Toolbar({
               defaultModel={defaultModel}
               selected={modelOverride}
               onChange={onModelChange}
+              disabled={modelLocked}
             />
           </span>
           <SystemPromptEditor
@@ -121,6 +126,7 @@ export function Toolbar({
             defaultValue={defaultValue}
             onModeChange={onModeChange}
             onCustomChange={onCustomChange}
+            disabled={promptLocked}
           />
 
           <span className="toolbar-cluster-gap" aria-hidden="true" />

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { diskSessionStore } from '../lib/sessionStore'
-import type { StoredConversation } from '../types'
+import type { Conversation, StoredConversation } from '../types'
 
 type Updater = StoredConversation[] | ((prev: StoredConversation[]) => StoredConversation[])
 
@@ -118,5 +118,30 @@ export function useSessions() {
     return enqueue(`deleting conversation '${id}'`, () => diskSessionStore.remove(id))
   }, [enqueue])
 
-  return { conversations, setConversations: mirror, loading, error, remove }
+  // the acknowledged save: the same serial chain as every mirror save and
+  // delete, but the returned promise rejects with this operation's failure.
+  // the chain itself always settles, so a rejection leaves it usable for
+  // later operations. the document is a private candidate: it enters neither
+  // the working copy nor any queued snapshot unless the caller installs it.
+  const saveCandidate = useCallback((id: string, doc: Conversation): Promise<void> => {
+    const operation = chainRef.current.then(() => diskSessionStore.save(id, doc))
+    chainRef.current = operation.then(
+      () => setError(null),
+      reason => setError(`saving conversation '${id}': ${describe(reason)}`),
+    )
+    return operation
+  }, [])
+
+  // install places an acknowledged document in the working copy without
+  // saving it again: the store already holds exactly this document.
+  const install = useCallback((id: string, doc: Conversation) => {
+    const previous = copyRef.current
+    const next = previous.some(entry => entry.id === id)
+      ? previous.map(entry => entry.id === id ? { id, doc } : entry)
+      : [{ id, doc }, ...previous]
+    copyRef.current = next
+    setConversations(next)
+  }, [])
+
+  return { conversations, setConversations: mirror, loading, error, remove, saveCandidate, install }
 }

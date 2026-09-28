@@ -1,0 +1,54 @@
+{
+  "expect": "invalid_recovery",
+  "body": {
+    "model": "qwen",
+    "messages": [],
+    "system_prompt_mode": "default",
+    "turn_id": "t2",
+    "recovery": {
+      "v": 1,
+      "turns": [
+        {
+          "id": "t1",
+          "v": 1,
+          "model_alias": "qwen",
+          "user_message_index": 0,
+          "state": "completed",
+          "last_seq": 8,
+          "rounds": [
+            {
+              "round_id": "t1-r1",
+              "message_index": 1,
+              "calls": [
+                {
+                  "id": "c1",
+                  "type": "function",
+                  "function": {
+                    "name": "add",
+                    "arguments": "{\"a\":17,\"b\":25}"
+                  },
+                  "state": "completed",
+                  "result": {
+                    "content": "42",
+                    "is_error": false
+                  }
+                }
+              ],
+              "committed": true
+            },
+            {
+              "round_id": "t1-r2",
+              "message_index": 3,
+              "calls": [],
+              "committed": true
+            }
+          ],
+          "terminal": {
+            "outcome": "completed",
+            "execution": "known"
+          }
+        }
+      ]
+    }
+  }
+}

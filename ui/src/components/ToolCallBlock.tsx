@@ -1,5 +1,12 @@
 import { useState } from 'react'
-import type { ActiveToolCall } from '../types'
+import type { ActiveToolCall, RecoveryPlaceholder } from '../types'
+
+// a recovered card states what pane knows, never a success or failure mark.
+const recoveryLabels: Record<RecoveryPlaceholder, string> = {
+  not_executed: 'not run',
+  unknown: 'outcome unknown',
+  operator_reported: 'operator-reported',
+}
 
 interface Props {
   toolCall: ActiveToolCall
@@ -25,6 +32,8 @@ export function ToolCallBlock({ toolCall, onApprove, onDeny }: Props) {
         return <span className="tool-status-check">&#10003;</span>
       case 'error':
         return <span className="tool-status-error">&#10007;</span>
+      case 'recovered':
+        return <span className="tool-status-text tool-status-recovered">{recoveryLabels[toolCall.recovery ?? 'unknown']}</span>
       default:
         return null
     }
@@ -65,7 +74,7 @@ export function ToolCallBlock({ toolCall, onApprove, onDeny }: Props) {
 
       {showDetails && toolCall.result !== undefined && (
         <div className="tool-call-result-section">
-          <span className="tool-message-label">tool result</span>
+          <span className="tool-message-label">{toolCall.recovery ? 'pane recovery note' : 'tool result'}</span>
           <pre className="tool-call-result">{toolCall.result}</pre>
         </div>
       )}

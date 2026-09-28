@@ -1,4 +1,5 @@
 import type { Conversation, SessionSummary } from '../types'
+import { MAX_BODY_BYTES, utf8ByteLength } from './turnRecord'
 
 // the storage seam. the app talks only to this interface, and every operation
 // takes the id explicitly -- the document body never carries one.
@@ -53,10 +54,17 @@ export const diskSessionStore: SessionStore = {
   },
 
   async save(id: string, doc: Conversation): Promise<void> {
+    // the size check measures the exact serialized body this call sends, in
+    // UTF-8 bytes, against the store's own cap: exactly the cap is allowed.
+    const body = JSON.stringify(doc)
+    const size = utf8ByteLength(body)
+    if (size > MAX_BODY_BYTES) {
+      throw new Error(`conversation is ${size} bytes, over the ${MAX_BODY_BYTES}-byte limit`)
+    }
     const response = await fetch(sessionUrl(id), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(doc),
+      body,
     })
     if (response.status !== 204) throw await failure(response)
   },

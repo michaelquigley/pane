@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, type KeyboardEvent } from 'react'
+import { useRef, useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { MessageBubble } from './MessageBubble'
 import type { Message, ActiveToolCall } from '../types'
 
@@ -11,8 +11,14 @@ interface Props {
   error: string | null
   appError: string | null
   canSend: boolean
-  onSend: (content: string) => void
-  onRetry: () => void
+  // why sending is unavailable, shown beside the composer: a signed-out
+  // model, or an interrupted turn awaiting reconciliation.
+  sendNotice?: string | null
+  // resolves true once the chat request has started; the draft is kept on
+  // any other outcome.
+  onSend: (content: string) => Promise<boolean>
+  preparing: boolean
+  recovery?: ReactNode
   onApprove: (id: string) => void
   onDeny: (id: string) => void
   onAbort: () => void
@@ -28,8 +34,10 @@ export function ChatView({
   error,
   appError,
   canSend,
+  sendNotice,
   onSend,
-  onRetry,
+  preparing,
+  recovery,
   onApprove,
   onDeny,
   onAbort,
@@ -56,17 +64,17 @@ export function ChatView({
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSend()
+      void handleSend()
     }
   }
 
-  const handleSend = () => {
-    // the gate sits before the input clear, so a send refused by the session
-    // gate leaves the typed text where the reader left it.
-    if (!input.trim() || isStreaming || !canSend) return
+  const handleSend = async () => {
+    // the draft stays until the request has actually started: a refused
+    // send, a failed pre-send save, or a rejected request leaves the typed
+    // text where the reader left it.
+    if (!input.trim() || isStreaming || preparing || !canSend) return
     const content = input
-    setInput('')
-    onSend(content)
+    if (await onSend(content)) setInput(current => current === content ? '' : current)
   }
 
   // visible messages keep their index in the full messages array, so the
@@ -103,23 +111,17 @@ export function ChatView({
           {error && (
             <div className="error-message">
               {error}
-              {!isStreaming && (
-                <button
-                  className="retry-btn"
-                  onClick={() => { if (canSend) onRetry() }}
-                  disabled={!canSend}
-                >
-                  Retry
-                </button>
-              )}
             </div>
           )}
+
+          {!isStreaming && recovery}
 
           <div ref={bottomRef} />
         </div>
       </div>
 
       {appError && <div className="app-notice">{appError}</div>}
+      {sendNotice && <div className="app-notice">{sendNotice}</div>}
 
       <div className="input-area">
         <textarea
@@ -133,7 +135,7 @@ export function ChatView({
           onKeyDown={handleKeyDown}
           placeholder="Send a message..."
           rows={1}
-          disabled={isStreaming}
+          disabled={isStreaming || preparing}
         />
         {isStreaming ? (
           <button className="send-btn" onClick={onAbort}>Stop</button>
@@ -141,7 +143,7 @@ export function ChatView({
           <button
             className="send-btn"
             onClick={handleSend}
-            disabled={!input.trim() || !canSend}
+            disabled={!input.trim() || !canSend || preparing}
           >
             Send
           </button>

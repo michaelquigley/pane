@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/michaelquigley/df/dd"
-	"github.com/michaelquigley/pane/internal/config"
 )
 
 // Round validates the entire chat-completions terminal boundary before
@@ -162,7 +161,8 @@ func (c *Client) Round(ctx context.Context, request RoundRequest, emit func(Roun
 	final := RoundFinal{Finish: finish, Content: content.String()}
 	if c.profile != "" {
 		final.LocalReasoning = localReasoning.String()
-		final.Origin = &RoundOrigin{Identity: RoundIdentity{Provider: config.ProviderChatCompletions, Protocol: "chat-completions", UpstreamModel: request.Model, Service: c.baseURL, Profile: c.profile}, RequestedEffort: c.effort}
+		origin := c.Origin("", request.Model)
+		final.Origin = &origin
 	}
 	for _, call := range calls {
 		if call.Name == "" || call.callType != "function" || !objectJSON(call.Arguments) {

@@ -1,0 +1,144 @@
+{
+  "expect": "invalid_recovery",
+  "body": {
+    "model": "qwen",
+    "messages": [
+      {
+        "role": "user",
+        "content": "go",
+        "turn_id": "t1"
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "turn_id": "t1",
+        "round_id": "t1-r1",
+        "tool_calls": [
+          {
+            "id": "c1",
+            "type": "function",
+            "function": {
+              "name": "read",
+              "arguments": "{}"
+            }
+          },
+          {
+            "id": "c2",
+            "type": "function",
+            "function": {
+              "name": "read",
+              "arguments": "{}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "one",
+        "tool_call_id": "c1",
+        "turn_id": "t1",
+        "round_id": "t1-r1"
+      },
+      {
+        "role": "user",
+        "content": "operator reconciliation: continue.",
+        "turn_id": "t1"
+      },
+      {
+        "role": "tool",
+        "content": "two",
+        "tool_call_id": "c2",
+        "turn_id": "t1",
+        "round_id": "t1-r1"
+      },
+      {
+        "role": "user",
+        "content": "next",
+        "turn_id": "t2"
+      }
+    ],
+    "system_prompt_mode": "default",
+    "turn_id": "t2",
+    "recovery": {
+      "v": 1,
+      "turns": [
+        {
+          "id": "t1",
+          "v": 1,
+          "model_alias": "qwen",
+          "user_message_index": 0,
+          "state": "interrupted",
+          "last_seq": 7,
+          "rounds": [
+            {
+              "round_id": "t1-r1",
+              "assistant": {
+                "role": "assistant",
+                "content": null,
+                "turn_id": "t1",
+                "round_id": "t1-r1",
+                "tool_calls": [
+                  {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {
+                      "name": "read",
+                      "arguments": "{}"
+                    }
+                  },
+                  {
+                    "id": "c2",
+                    "type": "function",
+                    "function": {
+                      "name": "read",
+                      "arguments": "{}"
+                    }
+                  }
+                ]
+              },
+              "calls": [
+                {
+                  "id": "c1",
+                  "type": "function",
+                  "function": {
+                    "name": "read",
+                    "arguments": "{}"
+                  },
+                  "state": "completed",
+                  "result": {
+                    "content": "one",
+                    "is_error": false
+                  }
+                },
+                {
+                  "id": "c2",
+                  "type": "function",
+                  "function": {
+                    "name": "read",
+                    "arguments": "{}"
+                  },
+                  "state": "completed",
+                  "result": {
+                    "content": "two",
+                    "is_error": false
+                  }
+                }
+              ],
+              "committed": false,
+              "message_index": 1
+            }
+          ],
+          "terminal": {
+            "outcome": "failed",
+            "execution": "known"
+          },
+          "reconciliation": {
+            "execution": "known",
+            "note": "operator reconciliation: continue.",
+            "message_index": 3
+          }
+        }
+      ]
+    }
+  }
+}

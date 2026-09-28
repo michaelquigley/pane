@@ -331,7 +331,7 @@ func TestAccountChangeBetweenToolRounds(t *testing.T) {
 				return nil
 			})
 			req := baseRequest()
-			err := llm.RunToolLoop(context.Background(), a, req.Messages, req.Model, 0, req.Tools, executor, sink, nil)
+			err := llm.RunToolLoop(context.Background(), a, llm.Turn{}, req.Messages, req.Model, 0, req.Tools, executor, sink, nil)
 			if rotate && err != nil || !rotate && err == nil {
 				t.Fatalf("unexpected loop result: %v", err)
 			}
@@ -663,7 +663,7 @@ func TestMalformedTerminalOutputExecutesNothing(t *testing.T) {
 			}))
 			executor := &fakeExecutor{}
 			request := baseRequest()
-			err := llm.RunToolLoop(context.Background(), a, request.Messages, request.Model, 0, request.Tools, executor, loopSink(func(llm.LoopEvent) error { return nil }), nil)
+			err := llm.RunToolLoop(context.Background(), a, llm.Turn{}, request.Messages, request.Model, 0, request.Tools, executor, loopSink(func(llm.LoopEvent) error { return nil }), nil)
 			var roundErr *llm.RoundError
 			if !errors.As(err, &roundErr) || roundErr.Kind != "protocol" {
 				t.Fatalf("got %v, want protocol error", err)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/michaelquigley/df/dl"
 	"github.com/michaelquigley/pane/internal/api"
+	"github.com/michaelquigley/pane/internal/auth"
 	"github.com/michaelquigley/pane/internal/config"
 	"github.com/michaelquigley/pane/internal/llm"
 	"github.com/michaelquigley/pane/internal/mcp"
@@ -75,6 +76,18 @@ func run(_ *cobra.Command, _ []string) {
 		dl.Fatalf("model clients: %v", err)
 	}
 	a := api.NewAPI(cfg, llmClient, modelClients, mcpMgr, sessions)
+	if usesSubscription(cfg) {
+		// a signed-out or unreadable credential store is an availability
+		// state for the subscription aliases, never a startup failure for
+		// the other connections.
+		store, err := auth.OpenGlobalStore()
+		if err != nil {
+			dl.Errorf("subscription credentials: %v", err)
+			a.SetSubscriptionAuth(nil, err)
+		} else {
+			a.SetSubscriptionAuth(auth.NewManager(store), nil)
+		}
+	}
 
 	mux := http.NewServeMux()
 	a.RegisterRoutes(mux)
@@ -105,6 +118,18 @@ func run(_ *cobra.Command, _ []string) {
 
 	mcpMgr.Stop()
 	dl.Infof("stopped")
+}
+
+func usesSubscription(cfg *config.Config) bool {
+	if !cfg.HasModelRegistry() {
+		return false
+	}
+	for _, model := range cfg.ResolvedModels() {
+		if model.Provider == config.ProviderCodex {
+			return true
+		}
+	}
+	return false
 }
 
 func main() {

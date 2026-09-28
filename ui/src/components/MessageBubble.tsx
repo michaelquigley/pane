@@ -127,7 +127,7 @@ export function MessageBubble({
         index,
         id: tc.id,
         name: tc.function.name,
-        status: message.tool_call_results?.[tc.id]?.status || 'complete',
+        status: message.tool_call_results?.[tc.id]?.recovery ? 'recovered' : message.tool_call_results?.[tc.id]?.status || 'complete',
         argumentsSoFar: tc.function.arguments,
         result: message.tool_call_results?.[tc.id]?.content,
         durationMs: message.tool_call_results?.[tc.id]?.duration_ms,

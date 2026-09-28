@@ -53,6 +53,12 @@ func New(ctx context.Context, alias, upstreamModel, effort string, credentials C
 	}, nil
 }
 
+// Origin is the turn's resolved connection: alias, requested effort, and the
+// account-bound replay identity captured when the adapter was created.
+func (a *Adapter) Origin() llm.RoundOrigin {
+	return llm.RoundOrigin{Alias: a.alias, Identity: a.identity, RequestedEffort: a.effort}
+}
+
 func (a *Adapter) Round(ctx context.Context, request llm.RoundRequest, emit func(llm.RoundEvent)) (llm.RoundFinal, error) {
 	if request.Model != a.model {
 		return llm.RoundFinal{}, &llm.RoundError{Kind: "invalid_request", Reason: "upstream model changed during turn"}

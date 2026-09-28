@@ -73,7 +73,7 @@ func TestSinkFailureStopsFurtherToolDispatch(t *testing.T) {
 			sink := &failingLoopSink{failAt: tt.failAt, err: writeErr}
 			adapter := &twoCallAdapter{}
 			executor := &countingToolExecutor{approvalNeeded: tt.approvalNeeded}
-			err := RunToolLoop(context.Background(), adapter,
+			err := RunToolLoop(context.Background(), adapter, Turn{},
 				[]Message{{Role: "user", Content: StringContent("read twice")}}, "test", 0,
 				[]Tool{{Type: "function", Function: &FunctionDef{Name: "read"}}},
 				executor, sink, immediateApproval{})

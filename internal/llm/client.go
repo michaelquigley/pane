@@ -46,6 +46,15 @@ func NewQwenClient(endpoint, model, apiKey, profile, effort string, includeUsage
 	return c, nil
 }
 
+// Origin describes the connection this client resolves for a turn: the
+// compatible protocol, upstream model, endpoint, and any profile preset.
+func (c *Client) Origin(alias, upstreamModel string) RoundOrigin {
+	return RoundOrigin{Alias: alias, RequestedEffort: c.effort, Identity: RoundIdentity{
+		Provider: config.ProviderChatCompletions, Protocol: "chat-completions",
+		UpstreamModel: upstreamModel, Service: c.baseURL, Profile: c.profile,
+	}}
+}
+
 func (c *Client) setAuth(req *http.Request) {
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
@@ -173,10 +182,12 @@ type chatWireMessage struct {
 }
 
 func (m chatWireMessage) MarshalDd() (map[string]any, error) {
-	// pane's round record never goes upstream; clearing it on a copy before
-	// marshaling keeps an unusable stored envelope from blocking the request.
+	// pane's round record and recovery metadata never go upstream; clearing
+	// them on a copy before marshaling keeps an unusable stored envelope from
+	// blocking the request.
 	message := m.Message
 	message.Origin, message.Continuation = nil, nil
+	message.TurnID, message.RoundID, message.RecoveryPlaceholder = "", "", ""
 	payload, err := message.MarshalDd()
 	if err != nil {
 		return nil, err

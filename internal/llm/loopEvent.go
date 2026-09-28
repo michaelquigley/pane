@@ -14,16 +14,52 @@ const (
 	LoopToolCallResult    LoopEventKind = "tool_call_result"
 	LoopRoundComplete     LoopEventKind = "round_complete"
 	LoopDone              LoopEventKind = "done"
+
+	// lifecycle events carry the authoritative turn record; the visual
+	// deltas above stay separate from it.
+	LoopTurnStart  LoopEventKind = "turn_start"
+	LoopRoundReady LoopEventKind = "round_ready"
+	LoopTurnEnd    LoopEventKind = "turn_end"
 )
 
 type LoopEvent struct {
 	Kind    LoopEventKind
+	RoundID string
 	Content string
 	Call    RoundCall
 	Usage   *Usage
 	Error   *LoopErrorData
 	Result  *LoopToolResult
 	Round   *LoopRound
+	Turn    *Turn
+	End     *TurnEnd
+}
+
+// Turn identifies one submitted request: its id, the selected alias, and the
+// resolved connection origin fixed for every round of the turn.
+type Turn struct {
+	ID     string
+	Alias  string
+	Origin *RoundOrigin
+}
+
+const (
+	TurnCompleted = "completed"
+	TurnFailed    = "failed"
+	TurnCancelled = "cancelled"
+
+	ExecutionNone    = "none"
+	ExecutionKnown   = "known"
+	ExecutionUnknown = "unknown"
+)
+
+// TurnEnd is the authoritative terminal record of a turn.
+type TurnEnd struct {
+	Outcome     string
+	Execution   string
+	ErrorCode   string
+	Message     string
+	PartialText string
 }
 
 type LoopErrorData struct {
@@ -43,6 +79,7 @@ type LoopToolResult struct {
 type LoopRound struct {
 	Assistant    Message
 	ToolMessages []Message
+	Finish       string
 }
 
 type LoopEventSink interface {

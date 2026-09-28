@@ -50,6 +50,15 @@ listen: 127.0.0.1:8400
 #    api_key: remote-token
 #    context_window: 163840
 #    max_tokens: 24756
+#  gpt-5.6-sol:
+#    provider: openai-codex
+#    upstream_model: gpt-5.6-sol
+#    reasoning_effort: medium
+#    # no endpoint, api_key, or max_tokens: credentials come from
+#    # 'pane auth login openai', run as the user running pane.
+#  gpt-6-astra:
+#    provider: openai-codex
+#    upstream_model: gpt-6-astra
 
 # ask the upstream for token usage on every request (default true).
 # set false for an endpoint that rejects the stream_options field.

@@ -46,6 +46,10 @@ func (s testSSELoopSink) Emit(event LoopEvent) error {
 		return s.writer.Send("round_complete", roundCompleteData{Assistant: event.Round.Assistant, ToolMessages: event.Round.ToolMessages})
 	case LoopDone:
 		return s.writer.SendDone()
+	case LoopTurnStart, LoopRoundReady, LoopTurnEnd:
+		// lifecycle records are asserted by their own tests; this sink models
+		// the visual protocol the older fixtures were written against.
+		return nil
 	default:
 		return fmt.Errorf("unknown test loop event '%s'", event.Kind)
 	}
@@ -54,5 +58,5 @@ func (s testSSELoopSink) Emit(event LoopEvent) error {
 func runTestToolLoop(ctx context.Context, client RoundAdapter, messages []Message, model string,
 	maxTokens int, tools []Tool, executor ToolExecutor, writer *sse.Writer, approvals ApprovalRegistry,
 ) error {
-	return RunToolLoop(ctx, client, messages, model, maxTokens, tools, executor, testSSELoopSink{writer: writer}, approvals)
+	return RunToolLoop(ctx, client, Turn{}, messages, model, maxTokens, tools, executor, testSSELoopSink{writer: writer}, approvals)
 }

@@ -134,8 +134,14 @@ func (m *Manager) access(ctx context.Context, expected string) (string, string, 
 type Status struct {
 	SignedIn      bool
 	RefreshNeeded bool
+	// ExpiryMarker is the stored credential's expiration time, empty when
+	// signed out. login, refresh, and logout normally change it, but a
+	// replacement with the same expiry keeps it; it is not a credential
+	// version. a non-secret comparison value, never shown.
+	ExpiryMarker string
 }
 
+// Status inspects the local credential only: no refresh, no network.
 func (m *Manager) Status() (Status, error) {
 	c, err := m.store.Read()
 	if errors.Is(err, ErrLoginRequired) {
@@ -144,7 +150,8 @@ func (m *Manager) Status() (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	return Status{SignedIn: true, RefreshNeeded: !m.now().Add(refreshWindow).Before(c.ExpiresAt)}, nil
+	return Status{SignedIn: true, RefreshNeeded: !m.now().Add(refreshWindow).Before(c.ExpiresAt),
+		ExpiryMarker: fmt.Sprintf("%d", c.ExpiresAt.UnixNano())}, nil
 }
 
 func (m *Manager) Logout(ctx context.Context) error { return m.store.Logout(ctx) }

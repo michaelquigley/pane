@@ -1,0 +1,104 @@
+{
+  "expect": "accepted",
+  "body": {
+    "model": "qwen",
+    "messages": [
+      {
+        "role": "user",
+        "content": "add",
+        "turn_id": "t1"
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "turn_id": "t1",
+        "round_id": "t1-r1",
+        "tool_calls": [
+          {
+            "id": "c1",
+            "type": "function",
+            "function": {
+              "name": "add",
+              "arguments": "{\"a\":17,\"b\":25}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "42",
+        "tool_call_id": "c1",
+        "turn_id": "t1",
+        "round_id": "t1-r1"
+      },
+      {
+        "role": "user",
+        "content": "operator reconciliation: c1 returned 42; continue from that result without repeating it.",
+        "turn_id": "t1"
+      },
+      {
+        "role": "user",
+        "content": "double that result without calling a tool.",
+        "turn_id": "t2"
+      }
+    ],
+    "system_prompt_mode": "default",
+    "turn_id": "t2",
+    "recovery": {
+      "v": 1,
+      "turns": [
+        {
+          "id": "t1",
+          "v": 1,
+          "model_alias": "qwen",
+          "user_message_index": 0,
+          "state": "interrupted",
+          "last_seq": 4,
+          "rounds": [
+            {
+              "round_id": "t1-r1",
+              "assistant": {
+                "role": "assistant",
+                "content": null,
+                "turn_id": "t1",
+                "round_id": "t1-r1",
+                "tool_calls": [
+                  {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {
+                      "name": "add",
+                      "arguments": "{\"a\":17,\"b\":25}"
+                    }
+                  }
+                ]
+              },
+              "calls": [
+                {
+                  "id": "c1",
+                  "type": "function",
+                  "function": {
+                    "name": "add",
+                    "arguments": "{\"a\":17,\"b\":25}"
+                  },
+                  "state": "completed",
+                  "result": {
+                    "content": "42",
+                    "is_error": false
+                  }
+                }
+              ],
+              "committed": false,
+              "message_index": 1
+            }
+          ],
+          "reconciliation": {
+            "execution": "known",
+            "note": "operator reconciliation: c1 returned 42; continue from that result without repeating it.",
+            "message_index": 3
+          }
+        }
+      ]
+    }
+  }
+}

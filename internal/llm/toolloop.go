@@ -2,6 +2,8 @@ package llm
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -63,9 +65,15 @@ const (
 	toolCallErrorExecution          = "execution_error"
 )
 
+// callNamespace is random per process. toolCallIDSequence restarts at zero
+// with every process, so without it a new call id could repeat one minted by
+// an earlier process and already stored in a conversation. ids from before
+// the namespace have one segment fewer and cannot collide with new ones.
+var callNamespace = newRandomHex(8)
+
 func nextToolCallID(iteration, index int) string {
 	seq := toolCallIDSequence.Add(1)
-	return fmt.Sprintf("pane_call_%d_%d_%d", seq, iteration, index)
+	return fmt.Sprintf("pane_call_%s_%d_%d_%d", callNamespace, seq, iteration, index)
 }
 
 func newToolFailureTracker() *toolFailureTracker {
@@ -122,12 +130,126 @@ func normalizeToolArguments(arguments string) string {
 	return string(normalized)
 }
 
-// RunToolLoop runs the full chat-with-tools loop: stream LLM response, execute
-// tool calls via MCP, append results, re-send until the LLM produces a final
-// content-only response.
+// RunToolLoop runs one submitted turn: stream the model response, execute
+// finalized tool calls via MCP, append results, and re-send until the model
+// produces a final content-only response. every round is announced as a
+// finalized record before any approval or dispatch, and the turn closes with
+// an authoritative turn_end unless the event stream itself failed.
 func RunToolLoop(
 	ctx context.Context,
 	client RoundAdapter,
+	turn Turn,
+	messages []Message,
+	model string,
+	maxTokens int,
+	tools []Tool,
+	executor ToolExecutor,
+	sink LoopEventSink,
+	approvals ApprovalRegistry,
+) error {
+	if turn.ID == "" {
+		turn.ID = NewTurnID()
+	}
+	lifecycle := &lifecycleSink{inner: sink}
+	if err := lifecycle.Emit(LoopEvent{Kind: LoopTurnStart, Turn: &turn}); err != nil {
+		return err
+	}
+	err := runRounds(ctx, client, turn, messages, model, maxTokens, tools, executor, lifecycle, approvals)
+	if lifecycle.failed != nil {
+		// the stream is gone: dispatch has stopped, and the browser's saved
+		// marker expresses the uncertainty. no terminal claim is possible.
+		return lifecycle.failed
+	}
+	end := &TurnEnd{Outcome: TurnCompleted, Execution: lifecycle.execution()}
+	if err != nil {
+		end.Outcome = TurnFailed
+		if ctx.Err() != nil {
+			end.Outcome = TurnCancelled
+		}
+		end.ErrorCode, end.Message, end.PartialText = lifecycle.errorCode, lifecycle.errorMessage, lifecycle.partial.String()
+		if end.ErrorCode == "" && end.Outcome == TurnCancelled {
+			end.ErrorCode, end.Message = "cancelled", err.Error()
+		}
+	}
+	if sinkErr := lifecycle.Emit(LoopEvent{Kind: LoopTurnEnd, End: end}); sinkErr != nil {
+		return sinkErr
+	}
+	if err != nil {
+		return err
+	}
+	// done stays the compatibility terminator of a completed turn only, as
+	// before; turn_end is what makes the terminal recovery claim.
+	return lifecycle.Emit(LoopEvent{Kind: LoopDone})
+}
+
+// NewTurnID returns a fresh server-side turn id, used for legacy requests
+// that do not supply their own.
+func NewTurnID() string {
+	return fmt.Sprintf("srv_%d_%s", toolCallIDSequence.Add(1), newRandomHex(8))
+}
+
+func newRandomHex(n int) string {
+	buf := make([]byte, n)
+	if _, err := rand.Read(buf); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(buf)
+}
+
+// lifecycleSink observes the events the loop emits to derive the turn's
+// terminal record: the execution summary from tool outcomes, the last loop
+// error, and the display text of the round in progress. a sink failure is
+// sticky and suppresses every later event, including turn_end.
+type lifecycleSink struct {
+	inner        LoopEventSink
+	failed       error
+	received     bool
+	unknown      bool
+	errorCode    string
+	errorMessage string
+	partial      strings.Builder
+}
+
+func (s *lifecycleSink) Emit(event LoopEvent) error {
+	if s.failed != nil {
+		return s.failed
+	}
+	switch event.Kind {
+	case LoopDelta:
+		s.partial.WriteString(event.Content)
+	case LoopRoundReady:
+		s.partial.Reset()
+	case LoopToolCallResult:
+		switch event.Result.Dispatch {
+		case ResultReceived:
+			s.received = true
+		case UnknownDispatch:
+			s.unknown = true
+		}
+	case LoopError:
+		s.errorCode, s.errorMessage = event.Error.Code, event.Error.Message
+	}
+	if err := s.inner.Emit(event); err != nil {
+		s.failed = err
+		return err
+	}
+	return nil
+}
+
+func (s *lifecycleSink) execution() string {
+	if s.unknown {
+		return ExecutionUnknown
+	}
+	if s.received {
+		return ExecutionKnown
+	}
+	return ExecutionNone
+}
+
+func runRounds(
+	ctx context.Context,
+	client RoundAdapter,
+	turn Turn,
 	messages []Message,
 	model string,
 	maxTokens int,
@@ -151,6 +273,7 @@ func RunToolLoop(
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		roundID := fmt.Sprintf("%s-r%d", turn.ID, iteration+1)
 
 		forcedFinalRequest := forceFinalResponse
 		forceFinalResponse = false
@@ -195,6 +318,7 @@ func RunToolLoop(
 			default:
 				return
 			}
+			output.RoundID = roundID
 			if sinkErr = sink.Emit(output); sinkErr != nil {
 				cancelRound()
 			}
@@ -263,11 +387,25 @@ func RunToolLoop(
 			return err
 		}
 
-		// build the assistant message
+		// build the assistant message. an adapter without its own origin
+		// records the turn's resolved connection, so every generated round
+		// names the connection that produced it.
+		origin := final.Origin
+		if origin == nil && turn.Origin != nil {
+			copied := *turn.Origin
+			origin = &copied
+		}
+		if origin != nil && origin.Alias == "" {
+			copied := *origin
+			copied.Alias = turn.Alias
+			origin = &copied
+		}
 		assistantMsg := Message{
 			Role:         "assistant",
-			Origin:       final.Origin,
+			Origin:       origin,
 			Continuation: final.Continuation,
+			TurnID:       turn.ID,
+			RoundID:      roundID,
 		}
 
 		if content != "" {
@@ -285,13 +423,21 @@ func RunToolLoop(
 			}
 		}
 
+		// the finalized round is recovery state before any approval or
+		// dispatch. qwen's request-local reasoning never enters it.
+		if err := sink.Emit(LoopEvent{Kind: LoopRoundReady, RoundID: roundID, Round: &LoopRound{
+			Assistant: assistantMsg, Finish: final.Finish,
+		}}); err != nil {
+			return err
+		}
+
 		messages = append(messages, assistantMsg)
 
 		toolMessages := make([]Message, 0, len(pending))
 
 		// execute each tool call
 		for _, p := range pending {
-			result, err := executeSingleTool(ctx, p, executor, sink, approvals)
+			result, err := executeSingleTool(ctx, roundID, p, executor, sink, approvals)
 			if err != nil {
 				return err
 			}
@@ -302,7 +448,7 @@ func RunToolLoop(
 			}
 
 			if result.Dispatch == UnknownDispatch {
-				if err := emitToolResult(sink, p, result); err != nil {
+				if err := emitToolResult(sink, roundID, p, result); err != nil {
 					return err
 				}
 				err := fmt.Errorf("tool outcome unknown for '%s'", p.Name)
@@ -316,11 +462,13 @@ func RunToolLoop(
 				Role:       "tool",
 				ToolCallID: p.ID,
 				Content:    &resultContent,
+				TurnID:     turn.ID,
+				RoundID:    roundID,
 			}
 			toolMessages = append(toolMessages, toolMsg)
 			messages = append(messages, toolMsg)
 
-			if err := emitToolResult(sink, p, result); err != nil {
+			if err := emitToolResult(sink, roundID, p, result); err != nil {
 				return err
 			}
 
@@ -332,18 +480,15 @@ func RunToolLoop(
 			return err
 		}
 
-		if err := sink.Emit(LoopEvent{Kind: LoopRoundComplete, Round: &LoopRound{
-			Assistant: assistantMsg, ToolMessages: toolMessages,
+		if err := sink.Emit(LoopEvent{Kind: LoopRoundComplete, RoundID: roundID, Round: &LoopRound{
+			Assistant: assistantMsg, ToolMessages: toolMessages, Finish: final.Finish,
 		}}); err != nil {
 			return err
 		}
 
 		// no tool calls — we're done
 		if len(pending) == 0 {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			return sink.Emit(LoopEvent{Kind: LoopDone})
+			return ctx.Err()
 		}
 	}
 
@@ -361,8 +506,8 @@ func emitLoopError(sink LoopEventSink, code string, cause error, toolCallID stri
 	}})
 }
 
-func emitToolResult(sink LoopEventSink, call *pendingToolCall, result toolCallResult) error {
-	return sink.Emit(LoopEvent{Kind: LoopToolCallResult,
+func emitToolResult(sink LoopEventSink, roundID string, call *pendingToolCall, result toolCallResult) error {
+	return sink.Emit(LoopEvent{Kind: LoopToolCallResult, RoundID: roundID,
 		Call: RoundCall{Index: call.Index, ID: call.ID, Name: call.Name},
 		Result: &LoopToolResult{Status: result.Status, ErrorCode: result.ErrorCode,
 			Content: result.Content, DurationMS: result.DurationMS, Dispatch: result.Dispatch},
@@ -408,6 +553,7 @@ func dropEmptyAssistants(messages []Message) []Message {
 
 func executeSingleTool(
 	ctx context.Context,
+	roundID string,
 	p *pendingToolCall,
 	executor ToolExecutor,
 	sink LoopEventSink,
@@ -427,7 +573,7 @@ func executeSingleTool(
 		}
 		ch := approvals.Register(p.ID)
 		defer approvals.Unregister(p.ID)
-		if err := sink.Emit(LoopEvent{Kind: LoopToolCallApprove, Call: RoundCall{
+		if err := sink.Emit(LoopEvent{Kind: LoopToolCallApprove, RoundID: roundID, Call: RoundCall{
 			Index: p.Index, ID: p.ID, Name: p.Name, Arguments: p.Arguments,
 		}}); err != nil {
 			return toolCallResult{}, err
@@ -460,7 +606,7 @@ func executeSingleTool(
 		return toolCallResult{}, ctx.Err()
 	}
 
-	if err := sink.Emit(LoopEvent{Kind: LoopToolCallExecuting, Call: RoundCall{
+	if err := sink.Emit(LoopEvent{Kind: LoopToolCallExecuting, RoundID: roundID, Call: RoundCall{
 		Index: p.Index, ID: p.ID, Name: p.Name,
 	}}); err != nil {
 		return toolCallResult{}, err

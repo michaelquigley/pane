@@ -66,7 +66,7 @@ flowchart TD
 
 two guards bound the loop. a hard iteration cap (`max_iterations` error if exceeded) prevents runaway loops, and a repeated-failure tracker watches for the same tool call failing again and again — after the threshold, the loop forces a final response by telling the model that tool calls are disabled and it must answer with what it has (`repeated_tool_failure` if the model persists anyway).
 
-the chat-completions adapter validates each model round before the loop can execute calls. a `tool_calls` finish must carry complete function metadata and object-valued arguments, followed by `[DONE]`; `stop` must carry no calls. a `length` or `content_filter` finish, missing `[DONE]`, conflicting finish, or malformed call fails the round without executing any of its calls. a received MCP reply, including an `IsError` reply, is known work; an error or missing reply after the MCP client call starts is an unknown outcome and stops the remaining batch and model rounds. the browser recovery record and reconciliation controls are still pending in stage 4 of the subscription-model work order.
+the chat-completions adapter validates each model round before the loop can execute calls. a `tool_calls` finish must carry complete function metadata and object-valued arguments, followed by `[DONE]`; `stop` must carry no calls. a `length` or `content_filter` finish, missing `[DONE]`, conflicting finish, or malformed call fails the round without executing any of its calls. a received MCP reply, including an `IsError` reply, is known work; an error or missing reply after the MCP client call starts is an unknown outcome and stops the remaining batch and model rounds. interrupted turns are recorded and reconciled in the browser (see [turn records and recovery](#turn-records-and-recovery)); nothing is retried or resumed automatically.
 
 the frontend sends the full conversation history with each request. the chat path is stateless — it just proxies, executes tools, and streams back. it never reads the session store: a chat request's behavior depends on its own body and nothing an earlier request left behind.
 
@@ -90,8 +90,8 @@ minimal surface:
 | `/` | GET | serve embedded frontend |
 | `/api/health` | GET | health check, returns `{"status": "ok"}` |
 | `/api/config` | GET | server defaults for the UI: system prompt, model, separator, and context windows |
-| `/api/chat` | POST | chat completion proxy with MCP tool loop. accepts OpenAI-format messages array. returns SSE stream. |
-| `/api/models` | GET | configured aliases in registry mode; upstream `/v1/models` proxy in legacy mode |
+| `/api/chat` | POST | one submitted turn: full history, turn id, and prior turn records in; SSE stream out. typed JSON errors before any stream opens |
+| `/api/models` | GET | configured aliases with local availability in registry mode; upstream `/v1/models` proxy in legacy mode |
 | `/api/tools` | GET | return discovered MCP tools and server statuses (for frontend display) |
 | `/api/tools/approve` | POST | approve or deny a pending tool call (for servers with `approve: true`) |
 | `/api/sessions` | GET | list every stored conversation's projection, sorted by updated descending, id ordinal-ascending as the tiebreak |
@@ -118,11 +118,31 @@ request body — the frontend sends the full conversation history every time. th
     { "role": "user", "content": "Now filter to only shuffle patterns" }
   ],
   "system_prompt_mode": "default",
-  "system_prompt": ""
+  "system_prompt": "",
+  "turn_id": "V1StGXR8_Z5jdHi6B-myT",
+  "recovery": { "v": 1, "turns": [] }
 }
 ```
 
+`turn_id` names the submitted turn; the final message must be the one user message tagged with it. `recovery.turns` carries every prior turn record in the conversation (the fresh turn's own saved marker is excluded), and an empty array means there are none. the pair is required together: a request with only one of them is rejected, while a legacy client that sends neither gets a server-generated `srv_` turn id and the event stream, without prior-recovery validation. messages may carry `turn_id`, `round_id`, `origin`, `continuation`, and `recovery_placeholder`; all are pane metadata, validated here and removed at the provider boundary. the body is capped at 32 MiB (the session-document cap) before decoding.
+
 the `messages` array uses standard OpenAI chat format, including any tool call/result pairs from prior turns. before the first request, the backend drops any assistant message that carries neither content nor tool calls: strict providers reject such a message ("must have content or tool_calls"), and one can reach the stored history when a turn ends without the model producing anything. dropping it is lossless, and it keeps a conversation whose history was poisoned that way usable. the system prompt is resolved server-side from `system_prompt_mode`: `default` uses the configured system prompt, `custom` uses the request's `system_prompt`, and `none` sends no system message at all.
+
+intake validates the history against the records before normalizing the system prompt, resolving credentials, or opening the stream, and never reads the session store. a failure is a typed JSON error with no stream and no provider or tool activity:
+
+```json
+{ "error": { "code": "recovery_required", "message": "interrupted turn 't1' needs reconciliation" } }
+```
+
+| status | code | meaning |
+|---|---|---|
+| 400 | `invalid_request`, `unknown_model` | undecodable body, or an alias the registry does not name |
+| 400 | `invalid_recovery` | malformed or inconsistent turn contract: ids, indices, bindings, placeholders, versions |
+| 409 | `recovery_required` | a prior turn is unresolved: still in progress, or interrupted without terminal non-execution evidence or a bound operator reconciliation |
+| 413 | `request_too_large` | body over 32 MiB |
+| 503 | `login_required`, `auth_error` | the subscription alias has no local login, or its credentials are unreadable |
+
+these checks make the client-supplied history self-consistent; they do not authenticate the browser's claims, detect deliberately omitted history, or know about unreported external effects.
 
 response — SSE stream. `Content-Type: text/event-stream`.
 
@@ -158,7 +178,16 @@ the response uses the standard OpenAI models-list shape. in registry mode it is 
 }
 ```
 
-the aliases are pane's public model identities; the upstream model ids and connection details are not exposed. in legacy mode, the handler remains a passthrough proxy to the top-level endpoint's `GET /v1/models`.
+each registry entry also carries `provider` and `auth_state`, plus `last_error` when the alias's last turn failed at the connection:
+
+```json
+{ "id": "sol", "object": "model", "owned_by": "pane", "provider": "openai-codex", "auth_state": "credential_available",
+  "last_error": { "code": "allowance", "message": "the subscription allowance is exhausted or rate limited", "at": 1790000000000 } }
+```
+
+`auth_state` is `not_required` for chat-completions aliases; for subscription aliases it is `login_required`, `credential_available`, `refresh_pending` (expired access token with a refresh credential, still sendable), or `error` (unreadable credentials). it comes from a local read of the credential file only: listing never refreshes a token or contacts a provider, and `credential_available` means configured to attempt a request, not entitlement or health. `last_error` carries a fixed safe message per code (`auth`, `allowance`, `upstream`, `transport`), never an upstream body; a completed turn clears it, and an auth failure is retired once login, refresh, or logout changes the stored credential's expiration time. a replacement that keeps the same expiry can leave a stale auth warning until the next completed turn; credentials carry no version beyond that marker. nothing disables an alias.
+
+the aliases are pane's public model identities; the upstream model ids and connection details are not exposed. in legacy mode, the handler remains a passthrough proxy to the top-level endpoint's `GET /v1/models`, and entries carry no availability fields.
 
 #### `GET /api/tools`
 
@@ -229,9 +258,16 @@ this is the critical contract between backend and frontend. the backend emits a 
 
 the llm loop emits typed lifecycle events through an error-returning sink; the API translates them to SSE. a failed event write stops the loop, including before approval or dispatch and between calls in one batch. a tool may already have run when its result write fails, so the stream makes no completion claim after that failure.
 
+every event names its turn (`turn_id`); round and call events also name their round (`round_id`, `<turn_id>-r<n>`). the critical lifecycle events — `turn_start`, `round_ready`, `tool_call_approve`, `tool_call_executing`, `tool_call_result`, `round_complete`, `turn_end` — carry a per-turn `seq` starting at 1 and increasing by one. the visual events (`delta`, `thinking_delta`, `tool_call_start`, `tool_call_args`, `usage`, `error`) carry no `seq` and never make a recovery claim.
+
 #### event types
 
+`turn_id`, `seq`, and `round_id` are shown on the lifecycle events and omitted from the visual ones below for brevity.
+
 ```
+event: turn_start
+data: {"turn_id": "t1", "seq": 1, "alias": "qwen2.5:14b", "origin": {"alias": "qwen2.5:14b", "identity": {"provider": "openai-chat-completions", "protocol": "chat-completions", "upstream_model": "qwen2.5:14b", "service": "http://localhost:11434/v1"}}}
+
 event: thinking_delta
 data: {"content": "the user wants the README, so first i should check the repo layout"}
 
@@ -247,27 +283,35 @@ data: {"index": 0, "id": "tc_1", "arguments_partial": "{\"sql\": \"SELECT tag, C
 event: usage
 data: {"prompt_tokens": 41230, "completion_tokens": 512, "total_tokens": 41742}
 
+event: round_ready
+data: {"turn_id": "t1", "seq": 2, "round_id": "t1-r1", "finish": "tool_calls", "assistant": {"role": "assistant", "content": null, "tool_calls": [...], "turn_id": "t1", "round_id": "t1-r1", "origin": {...}}}
+
 event: tool_call_executing
-data: {"index": 0, "id": "tc_1", "name": "baabhive_hive_sql_3f9c2ab1d4"}
+data: {"turn_id": "t1", "seq": 3, "round_id": "t1-r1", "index": 0, "id": "tc_1", "name": "baabhive_hive_sql_3f9c2ab1d4"}
 
 event: tool_call_result
-data: {"index": 0, "id": "tc_1", "name": "baabhive_hive_sql_3f9c2ab1d4", "status": "complete", "content": "[{\"tag\": \"straight-pocket\", ...}]", "duration_ms": 12, "execution_state": "result_received"}
+data: {"turn_id": "t1", "seq": 4, "round_id": "t1-r1", "index": 0, "id": "tc_1", "name": "baabhive_hive_sql_3f9c2ab1d4", "status": "complete", "content": "[{\"tag\": \"straight-pocket\", ...}]", "duration_ms": 12, "execution_state": "result_received"}
 
 event: round_complete
-data: {"assistant": {"role": "assistant", "content": null, "tool_calls": [...]}, "tool_messages": [{"role": "tool", "tool_call_id": "tc_1", "content": "..."}]}
+data: {"turn_id": "t1", "seq": 5, "round_id": "t1-r1", "assistant": {"role": "assistant", "content": null, "tool_calls": [...], "turn_id": "t1", "round_id": "t1-r1"}, "tool_messages": [{"role": "tool", "tool_call_id": "tc_1", "content": "...", "turn_id": "t1", "round_id": "t1-r1"}]}
 
 event: delta
 data: {"content": "The corpus leans heavily toward straight-pocket grooves..."}
+
+event: turn_end
+data: {"turn_id": "t1", "seq": 8, "outcome": "completed", "execution": "known"}
 
 event: done
 data: {}
 ```
 
-`round_complete` fires after each completed tool round, carrying the assistant message (with its tool calls) and the tool result messages — the frontend appends these to the conversation so the history it sends next turn matches what the model actually saw. an unknown tool outcome emits `tool_call_result` with `execution_state: "unknown"` and a terminal `error`; it does not emit `round_complete` or synthesize an observed tool reply. `not_dispatched` marks failures known to occur before MCP invocation.
+`turn_start` opens the turn after intake validation and before the first upstream request, carrying the selected alias and its resolved origin (for a subscription alias, the account-bound replay identity: an `account_scope` hash, never the account id). `round_ready` publishes each finalized round — the assistant with its calls, origin, and any durable continuation — before any approval or dispatch; every round passes through it, tool-requesting or not, so continuation reaches the browser without depending on thinking deltas. qwen's request-local reasoning never appears in `round_ready`, `round_complete`, or `turn_end`. `turn_end` is the authoritative terminal record: `outcome` is `completed`, `failed`, or `cancelled`, and `execution` summarizes dispatch evidence — `unknown` if any call's outcome is unknown, otherwise `known` if any reply was received, otherwise `none` — with an optional `error_code`, `message`, and the failed round's `partial_text`. `done` follows a completed `turn_end` only, as the compatibility terminator; it alone proves nothing about recovery. when an event write fails, no `turn_end` is sent.
+
+`round_complete` fires after each completed round, carrying the assistant message (with its tool calls) and the tool result messages, all tagged with their turn and round — the frontend appends these to the conversation so the history it sends next turn matches what the model actually saw, and promotes the already-known round in its record rather than adding it twice. an unknown tool outcome emits `tool_call_result` with `execution_state: "unknown"` and a terminal `error`; it does not emit `round_complete` or synthesize an observed tool reply. `not_dispatched` marks failures known to occur before MCP invocation.
 
 request cancellation during approval or before executor invocation stops the current batch without a synthetic tool result or normal `round_complete`. results already received remain observable; cancellation after one result prevents later calls in the batch from dispatching.
 
-`thinking_delta` is the model's reasoning, streamed one token at a time and interleaved with `delta` and the tool-call events in upstream order. it is display-only by construction: the backend `llm.Message` type carries no reasoning field, so reasoning is never accumulated, never echoed in the `round_complete` payload, and never re-sent to the model. the upstream stream reader tolerates both known reasoning field spellings — `reasoning` (openai o-style) and `reasoning_content` (the vllm / sglang family) — and emits a single pane field regardless of which one appears on the wire.
+`thinking_delta` is the model's reasoning, streamed one token at a time and interleaved with `delta` and the tool-call events in upstream order. it is display-only by construction: the backend `llm.Message` type carries no reasoning field, so display reasoning is never echoed in the `round_ready` or `round_complete` payload and never re-sent to the model from saved history. the two exceptions have their own channels and lifetimes: qwen profiles replay a round's reasoning only into the next tool round of the same Go request, and subscription rounds carry opaque encrypted reasoning items in the assistant's versioned `continuation`, never in `thinking`. the upstream stream reader tolerates both known reasoning field spellings — `reasoning` (openai o-style) and `reasoning_content` (the vllm / sglang family) — and emits a single pane field regardless of which one appears on the wire.
 
 `usage` carries the upstream's `prompt_tokens`, `completion_tokens`, and `total_tokens` scalars unchanged. it fires once per round when the upstream reports usage, after that round's content and tool-call stream events and before `round_complete`. the frontend records the selected pane alias with the measurement, so changing models causes the meter to use the newly selected alias and its configured context window. usage is absent when `include_usage` is off or when the upstream declines to report usage; either case leaves the turn otherwise unchanged.
 
@@ -318,22 +362,27 @@ data: {"code": "upstream", "message": "connection refused"}
 
 ```mermaid
 flowchart TD
-    a["1. user sends POST /api/chat"] --> b["2. backend opens the SSE stream"]
+    a["1. browser saves the candidate (user message + in-progress marker), then POSTs /api/chat"] --> v{"intake valid, login present?"}
+    v -- "no" --> r["typed JSON error; no stream, no provider request"]
+    v -- "yes" --> b["2. backend opens the SSE stream: turn_start"]
     b --> c["3. backend submits to the selected upstream with stream=true"]
-    c --> d["4. upstream streams delta, thinking_delta, and tool-call events"]
+    c --> d["4. upstream streams delta, thinking_delta, and tool-call previews"]
     d --> u["5. usage after the round's stream, when reported"]
-    u --> e{"the stream carries tool_calls?"}
-    e -- "no" --> h["9. upstream signals completion: done, SSE stream closes"]
+    u --> rr["6. round_ready: the finalized assistant and its call set"]
+    rr --> e{"the round carries tool_calls?"}
+    e -- "no" --> h["10. round_complete, turn_end, done; the stream closes"]
     e -- "yes" --> g{"server has approve: true?"}
-    g -- "yes" --> i["6. tool_call_approve: wait on POST /api/tools/approve (5-minute timeout)"]
-    g -- "no" --> j["7. tool_call_executing: dispatch to the MCP server via stdio"]
+    g -- "yes" --> i["7. tool_call_approve: wait on POST /api/tools/approve (5-minute timeout)"]
+    g -- "no" --> j["8. tool_call_executing: dispatch to the MCP server via stdio"]
     i -- "approved" --> j
-    i -- "denied or timed out" --> k["inject the failure as the tool result"]
-    j --> l["7. tool_call_result with status and duration"]
+    i -- "denied or timed out" --> k["record known non-execution as the tool result"]
+    j --> l["8. tool_call_result with execution_state"]
     k --> l
-    l --> m["8. round_complete with the assistant and tool messages; resubmit with results appended"]
-    m --> d
+    l --> m["9. round_complete with the assistant and tool messages; resubmit with results appended"]
+    m --> c
 ```
+
+a failed round, an unknown tool outcome, or cancellation ends the turn with `error` (when displayable) and a `turn_end` whose outcome is `failed` or `cancelled`, with no `round_complete` for the unfinished round and no `done`.
 
 #### multiple tool calls in one turn
 
@@ -375,6 +424,7 @@ ui/
     ├── types.ts              # Conversation, Message, ToolCall, SSEEvent, etc.
     ├── lib/
     │   ├── sse.ts            # SSE stream parser (pane's protocol)
+    │   ├── turnRecord.ts     # turn records: lifecycle reducer, recovery projection, request serializer, intake validation
     │   ├── sessionStore.ts   # the SessionStore interface and its backend adapter
     │   └── exportMarkdown.ts # conversation-to-markdown export
     ├── hooks/
@@ -395,6 +445,7 @@ ui/
         ├── ContextMeter.tsx
         ├── ToolPanel.tsx
         ├── ConversationList.tsx
+        ├── RecoveryPanel.tsx     # retry or reconcile an interrupted turn
         └── SystemPromptEditor.tsx
 ```
 
@@ -411,6 +462,7 @@ interface Conversation {
   createdAt: number;
   updatedAt: number;
   usage?: UsageRecord | null;
+  turns?: TurnRecord[];    // one recovery record per submitted turn; absent in older documents
 }
 
 // the working copy's element: the store's key paired with the document it
@@ -440,10 +492,44 @@ interface Message {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | null;
   tool_calls?: ToolCall[];                            // assistant messages with tool invocations
-  tool_call_results?: Record<string, ToolCallResult>; // render state for completed tool calls
   tool_call_id?: string;                              // tool result messages
-  thinking?: string;                                  // the round's reasoning, display-only
+  origin?: RoundOrigin;                               // the connection that produced an assistant round
+  continuation?: unknown;                             // opaque versioned provider continuation, never interpreted here
+  turn_id?: string;                                   // binding to the turn record
+  round_id?: string;                                  // binding to the round record
+  recovery_placeholder?: 'not_executed' | 'unknown' | 'operator_reported';
+  tool_call_results?: Record<string, ToolCallResult>; // render state for completed tool calls, never sent
+  thinking?: string;                                  // the round's reasoning, display-only, never sent
   thinkingCollapsed?: boolean;                        // per-block collapse state (undefined = expanded)
+}
+
+interface TurnRecord {
+  id: string;
+  v: 1;
+  model_alias: string;
+  user_message_index: number;
+  state: 'in_progress' | 'completed' | 'interrupted';
+  last_seq: number;                                   // the last applied critical event
+  rounds: RoundRecord[];
+  origin?: RoundOrigin;
+  partial_text?: string;                              // display text of an unfinished round; never sent
+  error_code?: string;
+  terminal?: { outcome: 'completed' | 'failed' | 'cancelled'; execution: 'none' | 'known' | 'unknown' };
+  reconciliation?: { execution: 'none' | 'known' | 'unknown'; note: string; message_index: number };
+}
+
+interface RoundRecord {
+  round_id: string;
+  assistant?: Message;                                // the finalized assistant until normal promotion
+  message_index?: number;                             // its position in history once represented
+  calls: CallRecord[];
+  committed: boolean;                                 // true only for a normal round_complete promotion
+}
+
+interface CallRecord extends ToolCall {
+  state: 'pending' | 'denied' | 'rejected' | 'not_dispatched' | 'dispatched' | 'completed' | 'failed' | 'unknown';
+  result?: { content: string; is_error: boolean };    // an actual received reply only
+  reconciliation?: { execution: 'none' | 'known' | 'unknown'; note: string };
 }
 
 interface ConfigResponse {
@@ -454,16 +540,20 @@ interface ConfigResponse {
   default_context_window: number;
 }
 
+// every event may carry turn_id/round_id; critical events also carry seq.
 type SSEEvent =
+  | { type: 'turn_start'; turn_id: string; seq: number; alias: string; origin?: RoundOrigin }
+  | { type: 'round_ready'; turn_id: string; seq: number; round_id: string; assistant: Message; finish: string }
+  | { type: 'turn_end'; turn_id: string; seq: number; outcome: string; execution: string; error_code?: string; message?: string; partial_text?: string }
   | { type: 'delta'; content: string }
   | { type: 'thinking_delta'; content: string }
   | { type: 'tool_call_start'; index: number; id: string; name: string }
   | { type: 'tool_call_args'; index: number; id: string; arguments_partial: string }
   | { type: 'tool_call_approve'; index: number; id: string; name: string; arguments: string }
   | { type: 'tool_call_executing'; index: number; id: string; name: string }
-  | { type: 'tool_call_result'; index: number; id: string; name: string; status: string; error_code?: string; content: string; duration_ms: number }
+  | { type: 'tool_call_result'; index: number; id: string; name: string; status: string; error_code?: string; content: string; duration_ms: number; execution_state: string }
   | { type: 'usage'; prompt_tokens: number; completion_tokens: number; total_tokens: number }
-  | { type: 'round_complete'; assistant: Message; tool_messages: Message[] }
+  | { type: 'round_complete'; round_id: string; assistant: Message; tool_messages: Message[] }
   | { type: 'error'; code: string; message: string; tool_call_id?: string }
   | { type: 'done' };
 ```
@@ -472,27 +562,46 @@ type SSEEvent =
 
 the `useChat` hook manages the streaming lifecycle. the chat POST returns an SSE body which the hook reads via `fetch` and a hand-rolled parser (`lib/sse.ts`) — EventSource can't POST, so the stream is consumed from the response body directly.
 
-1. user presses send
-2. append user message to `conversation.messages`
-3. POST `/api/chat` with the full messages array
-4. read the SSE response body through the parser
-5. for each SSE event:
+1. user presses send; the app builds the private candidate and saves it through the store (see below). nothing is sent unless that save succeeds
+2. on acknowledgement, the candidate becomes chat state and the POST `/api/chat` starts in the same step
+3. read the SSE response body through the parser
+4. for each SSE event:
+   - critical events (`turn_start`, `round_ready`, `tool_call_approve`, `tool_call_executing`, `tool_call_result`, `round_complete`, `turn_end`) are first applied to the turn record: a duplicate `seq` is ignored, while a gap, a foreign `turn_id`, or a malformed event stops consumption, aborts the request, and interrupts the turn
    - `delta` → append to the streaming buffer, render with cursor
    - `thinking_delta` → append to the streaming thinking buffer, render the live thinking block
    - `tool_call_start` → create a ToolCallBlock in `loading` state
    - `tool_call_args` → update the ToolCallBlock with streaming arguments
+   - `round_ready` → record the finalized round with each call `pending`
    - `tool_call_approve` → flip the ToolCallBlock to `awaiting_approval`, show approve/deny buttons
-   - `tool_call_executing` → flip the ToolCallBlock to `executing` state
-   - `tool_call_result` → flip the ToolCallBlock to `complete` or `error`, show the result (collapsible)
+   - `tool_call_executing` → mark the call `dispatched`; flip the ToolCallBlock to `executing`
+   - `tool_call_result` → record the outcome from `execution_state` (a received reply becomes `completed` or `failed` with its exact content; `not_dispatched` becomes `denied`, `rejected`, or `not_dispatched`; `unknown` stays `unknown`); flip the ToolCallBlock to `complete` or `error`
    - `usage` → replace the conversation's usage record with the round's token counts, stamped with the selected model and current time
-   - `round_complete` → commit the assistant and tool messages to the conversation history, grafting the round's accumulated thinking onto the committed assistant message
-   - `error` → show an inline error (tool-level) or a stream-level error
+   - `round_complete` → commit the assistant and tool messages to history, grafting the round's accumulated thinking onto the committed assistant, and promote the round in its record
+   - `turn_end` → record the terminal outcome; the turn is `completed` only when the outcome is completed and every round was promoted
+   - `error` → show the stream-level error
    - `done` → finalize the assistant message
-6. mirror the conversation to the store
+5. a stream that ends without `turn_end` — a dropped connection, a stop, a rejected event — leaves the turn `interrupted` with its partial display text and no terminal evidence
+6. every record change mirrors to the store as it happens, including changes to the turn record alone
 
 tool call block states: `loading` → `args_streaming` → [`awaiting_approval` →] `executing` → `complete` | `error`. the approval state only appears for servers with `approve: true`.
 
 thinking is display-only, end to end. the frontend owns its life from stream to commit to storage: `thinking_delta` accumulates per round, the committed assistant message carries the round's `thinking` (and its per-block `thinkingCollapsed` state), and both persist in the conversation's stored document — a reload returns the conversation exactly as the reader left it, collapsed blocks included. when the hook builds the `/api/chat` request body, it strips `thinking` and `thinkingCollapsed` from every message, so reasoning never reaches the backend; the backend's `llm.Message` type carries no reasoning field, so nothing reaches the model either. a response with no thinking tokens renders exactly as it did before — no block, no placeholder. accepted residual: thinking text is stored with no cap, so a conversation with a thinking-heavy model grows accordingly — bounded now by the 32 MiB document cap rather than by a browser quota.
+
+#### turn records and recovery
+
+every submitted turn has a record in the conversation document (`Conversation.turns`). it is the conversation's recovery evidence: which rounds were finalized, which calls were dispatched, what each returned, and how the turn ended. old documents without records remain valid and are never rewritten on load.
+
+**the pre-send save barrier.** before a chat request, the app allocates a fresh turn id and builds a private candidate: the recovery projection of prior turns (below), the new user message tagged with the id, and an `in_progress` marker whose `user_message_index` points at that message. the candidate is saved through `useSessions().saveCandidate`, which joins the same serial chain as every mirror save and delete but returns a promise that rejects with that save's failure while leaving the chain usable. until acknowledgement the candidate is in neither the working copy, chat state, nor any mirrored snapshot, so a failed save discards it: the draft stays in the composer, no POST is issued, and a later rename or unrelated save cannot persist its message or marker. on success the app checks the tab is still mounted and the owner unchanged, installs the acknowledged document without saving it again, and starts the POST for that owner with no intervening await. the POST carries the same turn id, and its `recovery.turns` excludes the fresh marker.
+
+**the preparation guard.** from building the candidate until the save-and-send decision, the app blocks conversation selection, creation, deletion, rename, duplicate sends, model selection, and system-prompt edits — the controls render locked, including a prompt editor already open, and the handlers refuse. the model, prompt mode, and prompt text are captured before the await, so the request uses the prepared settings; reasoning effort belongs to the alias's registry entry. model selection also stays locked while a turn is active, including during approvals. this guard covers normal app actions only, not browser closure, reload, or another tab.
+
+**interruption.** a stream that ends without `turn_end`, a stop, a lifecycle gap or malformed critical event, or navigating away leaves the record `interrupted` with the missing terminal evidence still missing; navigation writes the interruption to the turn's own conversation. an `in_progress` marker that no live request owns — after a reload, a crash between save and POST, or a lost terminal save — is treated as interrupted when read, without rewriting it. a typed pre-stream refusal (`/api/chat` returning a JSON error) is affirmative evidence that nothing ran and is recorded as a terminal `failed`/`none`.
+
+**recovery actions.** the recovery panel offers **retry** only on affirmative non-execution: a terminal `execution: none` that no recorded call contradicts. retry is a new turn carrying the same text. every other interruption requires **reconciliation** before sending: for each call still `pending`, `dispatched`, or `unknown`, the operator states whether it did not run, ran (describing the outcome), or remains unknown, with a note; a turn with no such calls takes a turn-level note. original states and received results are never overwritten, and the turn's execution summary never understates the evidence — any acknowledged unknown keeps it `unknown`. nothing is resent, resumed, or repeated by the panel; a deliberate repeat is the operator typing it again.
+
+**the portable recovery projection.** reconciliation, and a retry, place an interrupted turn's finalized-but-unpromoted rounds in history: the assistant with its complete calls, then exactly one tool-role message per call in call order, then the turn's `operator reconciliation: ` note as a user message. a received reply projects as its exact content. every other closure is a labeled placeholder, never a result: `pane recovery: this call was not executed.` (`not_executed`, for known non-execution or a pending call covered by terminal `none`, plus an operator suffix when reconciled as not run), `pane recovery: execution outcome unknown; no result was received.` (`unknown`), or `pane recovery: no tool result was received; the outcome below is operator-reported.` (`operator_reported`), each suffixed `\noperator note: <note>` when operator-attributed. a projected round keeps `committed: false` with its retained assistant as evidence. the projected assistant in history also carries display-only `tool_call_results` derived from the same closures: a received reply renders as its result under "tool result" (success or error, empty content included), while a placeholder card shows a neutral `not run`, `outcome unknown`, or `operator-reported` marker with its text under "pane recovery note" — never a success or failure mark. these decorations persist with the document and are stripped from every chat request. projection is idempotent across save and reload and never invokes an executor. the backend validates every placeholder's kind and exact text against the recorded evidence; provider conversion removes the pane metadata and keeps the attribution text.
+
+**limits.** this is conservative recovery for one browser and its store, not a transaction. browser receipt of an event is not a server acknowledgement, a crash before a terminal save can require reconciliation after actual success, an unacknowledged write may still have reached disk, and two tabs writing one conversation remain last-writer-wins. the backend's checks establish consistency of client-supplied history, not the truth of an external effect; a reconciled history does not stop a model from proposing the same work again, which still passes through approvals. qwen's request-local reasoning does not survive an interruption: a new turn continues from portable history only.
 
 the usage record rides on the conversation document, round-trips through the store with the history it describes, and is seeded into hook state when that conversation loads. starting or retrying a request and any history replacement through the chat hook — clear, delete, or abort — resets the live record; a conversation switch replaces it with the destination conversation's seed. a model switch leaves the stored record keyed to the model that produced it, so the mismatch honestly displays `?`. each arriving `usage` event replaces the record, so the last round wins. storage remains an implementation detail of the conversation rather than something the meter reads directly.
 
@@ -520,8 +629,8 @@ every operation takes the id explicitly and every item URL is percent-encoded, s
 three app-level guards ride on top:
 
 - **selection is a find, not a fetch.** `conversations.find(c => c.id === activeId)` over the working copy, loaded into the chat hook by a layout effect — before paint, so no painted frame shows the composer enabled while the chat area, meter, or commit snapshot still hold another conversation's state. at the hydration-completion transition the effect reconciles a retained selection against the installed copy: a match loads its document, and an id naming no stored conversation (a pre-arc `pane:activeConversation`) clears the selection rather than following it.
-- **a read is not a write.** the commit effect holds a snapshot of the (messages, usage) references the last mirrored document carries, seeded when the sync effect loads a conversation and advanced on every commit. while chat's state is still those references it issues no write, so selecting or reloading a conversation re-stamps neither `updatedAt` nor the rail's order. both sides normalize the optional `usage` field identically, so a document that omits the key reads as unchanged either way.
-- **the session gate.** every session-mutating entry point — both new-conversation controls, send (button and enter), retry — is closed while hydration is incomplete or a delete of the active conversation is in flight. the controls render disabled, the handlers refuse, and the composer's gate sits before the input clear, so the typed text survives and the input stays editable. selection is closed during the destructive window too: the sync effect re-attaches commit ownership, so a selection made there could commit a save behind the in-flight delete and re-create the file after it.
+- **a read is not a write.** the commit effect holds a snapshot of the (messages, usage, turns) references the last mirrored document carries, seeded when the sync effect loads a conversation and advanced on every commit. while chat's state is still those references it issues no write, so selecting or reloading a conversation re-stamps neither `updatedAt` nor the rail's order. a change to the turn records alone is a document change and is mirrored. the effect also skips a render whose chat state was replaced before it ran (a selection that loaded another conversation), so one conversation's history can never be written into another. both sides normalize the optional `usage` field identically, so a document that omits the key reads as unchanged either way.
+- **the session gate.** every session-mutating entry point — both new-conversation controls, send (button and enter), retry, reconciliation — is closed while hydration is incomplete, a delete of the active conversation is in flight, or a turn is being prepared. the controls render disabled, the handlers refuse, and the composer's gate sits before the input clear, so the typed text survives and the input stays editable. selection is closed during the destructive window too: the sync effect re-attaches commit ownership, so a selection made there could commit a save behind the in-flight delete and re-create the file after it.
 
 the rail renders in (updated descending, id ordinal-ascending) order — the same comparator the store's list applies, with the id compared as its `TextEncoder` bytes so screen order and disk order agree. a commit that stamps `updatedAt` moves the conversation to the top in the same render. a rename is not activity: it changes only `title` and leaves `updatedAt` untouched, so a renamed conversation keeps its place in the rail.
 
@@ -533,7 +642,7 @@ the UI:
 
 - **chat view.** messages rendered as markdown (with syntax-highlighted code blocks). streaming token display with a visible cursor/caret. assistant messages that carry thinking render a quiet thinking block above their content — live and always expanded while the turn streams, resting expanded at turn end, collapsible by the reader with the collapsed state persisting per message.
 - **tool call visibility.** when the LLM invokes a tool, show it inline — the tool name, arguments (collapsible), and result (collapsible). not hidden, not modal — part of the conversation flow. think Claude Desktop's tool use blocks. each round's thinking block sits above the tool calls that round motivated, so the reader sees the model reason its way into a call.
-- **model selector.** the toolbar's model control: a glyph beside a compact dropdown populated from `/api/models`. in registry mode these values are the configured aliases, which can distinguish the same upstream model on different hosts. the dropdown's popup keeps the browser's native styling — like scrollbars, not worth fighting (the family's recorded decision). persisted in localStorage.
+- **model selector.** the toolbar's model control: a glyph beside a compact dropdown populated from `/api/models`. a signed-out subscription alias stays selectable, labeled `(sign in)`; selecting it keeps the draft, disables send, and shows `pane auth login openai`. the list refreshes on window focus and after each request, and while the selected alias needs login it polls every five seconds in a visible tab, one fetch at a time. the selector locks while a turn is prepared or active. in registry mode these values are the configured aliases, which can distinguish the same upstream model on different hosts. the dropdown's popup keeps the browser's native styling — like scrollbars, not worth fighting (the family's recorded decision). persisted in localStorage.
 - **context meter.** the readout in the bar's signal column. it compares the latest `prompt_tokens` measurement with the selected model's exact configured window, then shifts from cool below 50%, to warm from 50–80%, to hot at 80% and above. `?` names the distinct unknown state in its tooltip: no usage yet, a measurement from another model, or no configured window for the measured model.
 - **tool panel.** slide-out sidebar below the bar, opened from the toolbar's tools glyph (lit while open, wearing the tool count as a badge while the count is positive) showing discovered MCP tools and server statuses.
 - **system prompt.** the toolbar's description glyph — lit on the non-default modes — opens a modal holding the mode select (default/custom/none) and, for custom, the text. escape and outside click close it, returning focus to the glyph. mode and text persist in localStorage.
@@ -640,7 +749,7 @@ the config cascade, lowest to highest priority: compiled defaults → `~/.config
 
 when `models` is present, its keys are the only accepted model names. `provider` defaults to `openai-chat-completions`, retaining the existing endpoint/key inheritance and explicit empty `api_key` behavior. `upstream_model` defaults to the alias. unknown aliases are rejected before an SSE stream starts, and `/api/models` reports the configured aliases without probing any host. model fields from successive YAML layers merge by alias and field, so an explicit endpoint or key in a lower layer remains explicit when a higher layer changes the provider.
 
-`provider: openai-codex` selects a subscription connection. it does not inherit the top-level endpoint or key and rejects per-model `endpoint` and `api_key`, even when explicitly empty. it also rejects `max_tokens`; this route has no established output-cap mapping. an omitted `context_window` remains unknown in the meter. the stage 3 Responses adapter is covered by local fixtures but is not connected to `/api/chat`; subscription selection still returns an unavailable response without provider traffic until the stage 4 browser lifecycle lands.
+`provider: openai-codex` selects a subscription connection. it does not inherit the top-level endpoint or key and rejects per-model `endpoint` and `api_key`, even when explicitly empty. it also rejects `max_tokens`; this route has no established output-cap mapping. an omitted `context_window` remains unknown in the meter. all subscription aliases share one credential manager; a signed-out or unreadable credential store is an availability state for those aliases, never a startup failure for the others. each submitted turn resolves its connection once: the current account is captured and bound into the turn's origin, and every round of that turn uses that account and the alias's effort preset.
 
 `compatibility_profile` accepts `qwen3.8-ninfer` or `qwen3.8-llamacpp` on chat-completions connections. those profiles accept explicit `reasoning_effort` values `none`, `low`, `medium`, and `xhigh`. unprofiled chat-completions connections reject an explicit effort. subscription connections have no compatibility profile. for `gpt-5.6-sol`, explicit effort accepts `none`, `low`, `medium`, `high`, `xhigh`, and `max`; for `gpt-6-astra`, it accepts `low`, `medium`, `high`, `xhigh`, and `max`. these capabilities are keyed to the exact resolved upstream model id. omitted effort remains unset and will omit the subscription `reasoning` object; it does not imply a particular backend default. unknown subscription model ids can be configured with omitted effort, but have no accepted explicit effort table.
 
@@ -694,7 +803,7 @@ the key principle: tool errors are not stream errors. when a tool fails, pane in
 
 | failure | backend behavior | frontend rendering |
 |---|---|---|
-| connection refused or HTTP 4xx/5xx | emit `event: error` with `code: upstream`, close stream | error shown in conversation |
+| connection refused or HTTP 4xx/5xx | emit `event: error` with `code: upstream` (`auth` or `allowance` for subscription 401/403/429), then `turn_end`; close stream | error shown in conversation; the alias's `last_error` reports it without disabling the alias |
 | stream read fails or closes before `[DONE]` | emit `event: error` with `code: transport` or `truncated`, respectively; close stream | streaming content preserved, error appended |
 | stream completes with an empty completion (no content, no tool calls) | emit `event: error` with `code: empty_response`, close stream; the message names the cause when the model hit its output token limit while thinking, and the empty round is not committed, so the history stays clean. the fix is a bigger output budget: the backend's default, or pane's `max_tokens` setting for the model | error shown in conversation |
 | malformed upstream SSE | log warning, skip malformed chunk, continue | invisible to user unless it corrupts the response |
@@ -703,11 +812,13 @@ the key principle: tool errors are not stream errors. when a tool fails, pane in
 
 | failure | behavior |
 |---|---|
-| SSE connection dropped (network) | auto-reconnect not attempted (stateless request model); the partial turn remains visible |
+| SSE connection dropped (network) | not reconnected or retried; the turn is recorded as interrupted with its partial text and must be reconciled before the next send, even when no tool event arrived |
+| a pre-send candidate save fails | no chat request is issued; the draft stays in the composer and the error line names the failure |
+| a lifecycle event is missing, duplicated out of order, or malformed | a duplicate is ignored; anything else stops consumption, aborts the request, and interrupts the turn |
 | backend not running | API fetches fail; the UI loads, the rail is empty, the error line names the failed list, and the session gate stays closed until a reload after recovery |
 | a store operation fails (save, delete, or a hydration `get`) | the screen keeps what state holds, the error line names the failure, and the next successful store operation clears it |
 | `/api/config` fetch fails | the error line names it and points at restart-and-reload, persisting until reload; the rail and stored conversations remain usable, while the model list stays empty and a send without an explicit model override fails through the chat error path |
-| the tab is closed or reloaded while a commit's PUT is in flight | that commit's tail is lost; a reload after the turn settles restores the complete turn |
+| the tab is closed or reloaded while a commit's PUT is in flight | that commit's tail is lost; the last saved turn record, if still `in_progress`, requires reconciliation after reload |
 | a delete of the active conversation fails | the selection stays in its post-delete state with commit ownership detached; the disk still holds the conversation, and a reload restores it |
 
 ## what pane is _not_

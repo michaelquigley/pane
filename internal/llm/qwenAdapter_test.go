@@ -58,7 +58,7 @@ func TestQwenActiveReasoningOnlyNextToolRound(t *testing.T) {
 				t.Fatal(err)
 			}
 			var roundEvents []LoopEvent
-			err = RunToolLoop(context.Background(), client, []Message{{Role: "system", Content: StringContent("base")}, {Role: "user", Content: StringContent("add")}}, "qwen3.8-27b", 4096, []Tool{{Type: "function", Function: &FunctionDef{Name: "add", Parameters: json.RawMessage(`{"type":"object"}`)}}}, qwenExecutor{}, qwenSink(func(event LoopEvent) error { roundEvents = append(roundEvents, event); return nil }), nil)
+			err = RunToolLoop(context.Background(), client, Turn{}, []Message{{Role: "system", Content: StringContent("base")}, {Role: "user", Content: StringContent("add")}}, "qwen3.8-27b", 4096, []Tool{{Type: "function", Function: &FunctionDef{Name: "add", Parameters: json.RawMessage(`{"type":"object"}`)}}}, qwenExecutor{}, qwenSink(func(event LoopEvent) error { roundEvents = append(roundEvents, event); return nil }), nil)
 			if err != nil {
 				t.Fatal(err)
 			}

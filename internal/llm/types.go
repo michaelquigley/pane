@@ -31,16 +31,24 @@ type Message struct {
 	ToolCallID   string        `dd:"tool_call_id,+omitempty"`
 	Origin       *RoundOrigin  `dd:"origin,+omitempty"`
 	Continuation *Continuation `dd:"continuation,+omitempty"`
+	// pane recovery metadata: bindings to the turn record and the kind of a
+	// recovery placeholder. provider conversion never sends these fields.
+	TurnID              string `dd:"turn_id,+omitempty"`
+	RoundID             string `dd:"round_id,+omitempty"`
+	RecoveryPlaceholder string `dd:"recovery_placeholder,+omitempty"`
 }
 
 // Message.MarshalDd preserves the chat message's explicit null content on both
 // upstream requests and pane round events.
 func (m Message) MarshalDd() (map[string]any, error) {
 	payload, err := dd.Unbind(struct {
-		Role       string
-		ToolCalls  []ToolCall `dd:",+omitempty"`
-		ToolCallID string     `dd:",+omitempty"`
-	}{Role: m.Role, ToolCalls: m.ToolCalls, ToolCallID: m.ToolCallID})
+		Role                string
+		ToolCalls           []ToolCall `dd:",+omitempty"`
+		ToolCallID          string     `dd:",+omitempty"`
+		TurnID              string     `dd:",+omitempty"`
+		RoundID             string     `dd:",+omitempty"`
+		RecoveryPlaceholder string     `dd:",+omitempty"`
+	}{Role: m.Role, ToolCalls: m.ToolCalls, ToolCallID: m.ToolCallID, TurnID: m.TurnID, RoundID: m.RoundID, RecoveryPlaceholder: m.RecoveryPlaceholder})
 	if err != nil {
 		return nil, err
 	}

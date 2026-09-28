@@ -1,0 +1,46 @@
+{
+  "expect": "accepted",
+  "body": {
+    "model": "qwen",
+    "messages": [
+      {
+        "role": "user",
+        "content": "old question"
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call-1",
+            "type": "function",
+            "function": {
+              "name": "read",
+              "arguments": "{}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "old result",
+        "tool_call_id": "call-1"
+      },
+      {
+        "role": "assistant",
+        "content": "old answer"
+      },
+      {
+        "role": "user",
+        "content": "new question",
+        "turn_id": "t1"
+      }
+    ],
+    "system_prompt_mode": "default",
+    "turn_id": "t1",
+    "recovery": {
+      "v": 1,
+      "turns": []
+    }
+  }
+}

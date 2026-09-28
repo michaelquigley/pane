@@ -1,0 +1,95 @@
+{
+  "expect": "invalid_recovery",
+  "body": {
+    "model": "qwen",
+    "messages": [
+      {
+        "role": "user",
+        "content": "add 17 and 25",
+        "turn_id": "t1"
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "turn_id": "t1",
+        "round_id": "t1-r1",
+        "tool_calls": [
+          {
+            "id": "c1",
+            "type": "function",
+            "function": {
+              "name": "add",
+              "arguments": "{\"a\":17,\"b\":25}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "42",
+        "tool_call_id": "c1",
+        "turn_id": "t1",
+        "round_id": "t1-r1"
+      },
+      {
+        "role": "assistant",
+        "content": "the sum is 42",
+        "turn_id": "t1",
+        "round_id": "t1-r2"
+      },
+      {
+        "role": "user",
+        "content": "next",
+        "turn_id": "t2",
+        "round_id": "t2-r1"
+      }
+    ],
+    "system_prompt_mode": "default",
+    "turn_id": "t2",
+    "recovery": {
+      "v": 1,
+      "turns": [
+        {
+          "id": "t1",
+          "v": 1,
+          "model_alias": "qwen",
+          "user_message_index": 0,
+          "state": "completed",
+          "last_seq": 8,
+          "rounds": [
+            {
+              "round_id": "t1-r1",
+              "message_index": 1,
+              "calls": [
+                {
+                  "id": "c1",
+                  "type": "function",
+                  "function": {
+                    "name": "add",
+                    "arguments": "{\"a\":17,\"b\":25}"
+                  },
+                  "state": "completed",
+                  "result": {
+                    "content": "42",
+                    "is_error": false
+                  }
+                }
+              ],
+              "committed": true
+            },
+            {
+              "round_id": "t1-r2",
+              "message_index": 3,
+              "calls": [],
+              "committed": true
+            }
+          ],
+          "terminal": {
+            "outcome": "completed",
+            "execution": "known"
+          }
+        }
+      ]
+    }
+  }
+}

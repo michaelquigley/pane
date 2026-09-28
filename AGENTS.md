@@ -28,14 +28,21 @@ pane/
 ├── cmd/pane/                   # cobra CLI entrypoint
 │   ├── main.go                 # root command (runs server), --verbose, --config
 │   ├── version.go              # version subcommand
+│   ├── auth.go                 # auth login/status/logout openai
 │   └── new.go                  # generate pane.yaml
 ├── internal/
-│   ├── config/                 # Config structs, YAML cascade loader, validation
-│   ├── llm/                    # OpenAI-compatible HTTP client and streaming
-│   │   ├── client.go           # NewClient, ListModels, StreamChat
-│   │   ├── types.go            # ChatRequest, Message, Tool, ToolCall, StreamChunk
+│   ├── config/                 # Config structs, YAML cascade loader, validation, effort capabilities
+│   ├── auth/                   # subscription credential manager: private store, lock, login, refresh
+│   ├── llm/                    # provider-neutral rounds and the shared tool loop
+│   │   ├── round.go            # RoundAdapter, RoundIdentity/Origin, versioned Continuation, ToolExecution
+│   │   ├── loopEvent.go        # LoopEvent, Turn, TurnEnd: the lifecycle the API maps to SSE
+│   │   ├── client.go           # NewClient/NewQwenClient, ListModels, StreamChat, chat wire projection
+│   │   ├── chatAdapter.go      # chat-completions adapter and terminal-status validation
+│   │   ├── types.go            # ChatRequest, Message (with pane recovery metadata), Tool, ToolCall
 │   │   ├── stream.go           # SSE stream reader (parses OpenAI format)
-│   │   └── toolloop.go         # tool-call loop, ToolExecutor/ApprovalRegistry interfaces
+│   │   ├── toolloop.go         # turn lifecycle, tool-call loop, ToolExecutor/ApprovalRegistry interfaces
+│   │   └── codex/              # subscription Responses adapter: request builder, stream parser, replay
+
 │   ├── mcp/                    # MCP server lifecycle manager
 │   │   ├── manager.go          # spawn, init, discover, execute, stop
 │   │   └── tool.go             # ToolInfo, MCP-to-OpenAI translation, namespace
@@ -45,9 +52,11 @@ pane/
 │   │   └── writer.go           # Writer, Send, event data types
 │   └── api/                    # HTTP API handlers
 │       ├── api.go              # API struct, route registration
-│       ├── chat.go             # POST /api/chat (tool loop integration)
-│       ├── modelClients.go     # construct one immutable LLM client per configured alias
-│       ├── models.go           # GET /api/models
+│       ├── chat.go             # POST /api/chat: intake, per-turn connection, tool loop, typed errors
+│       ├── chatEventSink.go    # loop lifecycle to SSE, per-turn seq
+│       ├── recovery.go         # turn-record intake validation (invalid_recovery / recovery_required)
+│       ├── modelClients.go     # construct one immutable LLM client per chat-completions alias
+│       ├── models.go           # GET /api/models, local auth state and last failures
 │       ├── tools.go            # GET /api/tools
 │       ├── sessions.go         # /api/sessions CRUD handlers
 │       └── approve.go          # POST /api/tools/approve, ApprovalRegistry
@@ -61,14 +70,15 @@ pane/
 │       ├── lib/
 │       │   ├── sse.ts          # SSE stream parser (pane's protocol)
 │       │   ├── usageRecord.ts  # attach selected model aliases to usage events
+│       │   ├── turnRecord.ts   # turn records: lifecycle reducer, recovery projection, request serializer, validation
 │       │   ├── sessionStore.ts   # SessionStore interface + backend adapter
 │       │   └── exportMarkdown.ts # conversation-to-markdown export
 │       ├── hooks/
-│       │   ├── useChat.ts      # SSE streaming, tool call state machine, approvals
+│       │   ├── useChat.ts      # turn streaming, lifecycle validation, record updates, approvals
 │       │   ├── useConfig.ts    # GET /api/config
-│       │   ├── useSessions.ts  # the mirror hook: hydration, diff-mirror, serial chain
+│       │   ├── useSessions.ts  # the mirror hook: hydration, diff-mirror, serial chain, acknowledged candidate save
 │       │   ├── useLocalStorage.ts
-│       │   ├── useModels.ts    # GET /api/models
+│       │   ├── useModels.ts    # GET /api/models with focus refresh and login polling
 │       │   └── useTools.ts     # GET /api/tools
 │       └── components/
 │           ├── ChatView.tsx    # message list, input, auto-scroll
@@ -94,7 +104,7 @@ pane/
 
 ## key design decisions
 
-1. **stateless chat path, disk-backed record** — the backend owns the record (one opaque JSON file per conversation under `data_dir`, the id being the file's name and no field of the body) but keeps no in-memory conversation state: every `/api/chat` request includes the full message history, and the chat path never reads the store. the browser holds a working copy of the estate — state is the working truth, the store is its durable mirror, hydrated on load and persisted on change.
+1. **stateless chat path, disk-backed record** — the backend owns the record (one opaque JSON file per conversation under `data_dir`, the id being the file's name and no field of the body) but keeps no in-memory conversation state: every `/api/chat` request includes the full message history, and the chat path never reads the store. the browser holds a working copy of the estate — state is the working truth, the store is its durable mirror, hydrated on load and persisted on change. the one exception to "persist after change" is the pre-send save barrier: a turn's user message and in-progress marker are saved and acknowledged before the chat POST starts, so an interrupted turn is always recoverable as uncertain rather than silently lost.
 
 2. **hand-rolled LLM client** — ~150 lines replacing go-openai. clean interfaces so a library can be swapped in later. supports streaming, tool calls, bearer token auth.
 
@@ -114,8 +124,8 @@ pane/
 |---|---|---|
 | `/api/health` | GET | health check |
 | `/api/config` | GET | server config (system prompt, model, context windows) |
-| `/api/models` | GET | configured aliases in registry mode; proxy to the LLM endpoint's `/v1/models` in legacy mode |
-| `/api/chat` | POST | chat completion with MCP tool loop, returns SSE stream |
+| `/api/models` | GET | configured aliases with local `provider`/`auth_state`/`last_error` in registry mode; proxy to the LLM endpoint's `/v1/models` in legacy mode |
+| `/api/chat` | POST | one turn: full history plus `turn_id` and prior `recovery` records, validated before any stream; returns SSE stream, or a typed JSON error |
 | `/api/tools` | GET | discovered MCP tools with server statuses |
 | `/api/tools/approve` | POST | approve/deny a pending tool call |
 | `/api/sessions` | GET | list stored conversation projections (updated descending, id ordinal-ascending) |
@@ -125,7 +135,7 @@ pane/
 
 ## SSE streaming protocol
 
-the backend emits typed SSE events: `delta`, `thinking_delta`, `tool_call_start`, `tool_call_args`, `tool_call_executing`, `tool_call_approve`, `tool_call_result`, `usage`, `round_complete`, `error`, `done`. the event data types live in `internal/sse/writer.go`; the frontend state machine that consumes them is in `ui/src/hooks/useChat.ts`. `docs/current/pane.md` documents the full protocol and event lifecycle.
+the backend emits typed SSE events: `turn_start`, `round_ready`, `delta`, `thinking_delta`, `tool_call_start`, `tool_call_args`, `tool_call_executing`, `tool_call_approve`, `tool_call_result`, `usage`, `round_complete`, `turn_end`, `error`, `done`. every event names its `turn_id`; the critical lifecycle events carry a per-turn `seq`, and the browser treats a gap or malformed critical event as lost recovery information. the event data types live in `internal/sse/writer.go`; the frontend state machine that consumes them is in `ui/src/hooks/useChat.ts`. `docs/current/pane.md` documents the full protocol and event lifecycle.
 
 ## configuration
 
@@ -147,6 +157,7 @@ the optional `models` map is keyed by the aliases exposed to the browser. `endpo
 pane                    # start server (default command)
 pane new                # generate pane.yaml in current directory
 pane version            # show version
+pane auth login openai  # subscription login (--method device for another machine); also status, logout
 pane --config ./my.yaml # start with explicit config
 pane -v                 # verbose logging (debug level)
 ```

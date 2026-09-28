@@ -49,47 +49,66 @@ func (s *Writer) SendDone() error {
 	return nil
 }
 
-// event data types for the pane SSE protocol.
+// event data types for the pane SSE protocol. every event names its turn;
+// critical lifecycle events also carry a per-turn monotonically increasing
+// 'seq', and round/call events name their round.
 
 type DeltaData struct {
+	TurnID  string `dd:"turn_id,+omitempty"`
+	RoundID string `dd:"round_id,+omitempty"`
 	Content string `dd:"content"`
 }
 
 type ThinkingDeltaData struct {
+	TurnID  string `dd:"turn_id,+omitempty"`
+	RoundID string `dd:"round_id,+omitempty"`
 	Content string `dd:"content"`
 }
 
 type UsageData struct {
-	PromptTokens     int `dd:"prompt_tokens"`
-	CompletionTokens int `dd:"completion_tokens"`
-	TotalTokens      int `dd:"total_tokens"`
+	TurnID           string `dd:"turn_id,+omitempty"`
+	RoundID          string `dd:"round_id,+omitempty"`
+	PromptTokens     int    `dd:"prompt_tokens"`
+	CompletionTokens int    `dd:"completion_tokens"`
+	TotalTokens      int    `dd:"total_tokens"`
 }
 
 type ErrorData struct {
+	TurnID     string `dd:"turn_id,+omitempty"`
 	Code       string `dd:"code"`
 	Message    string `dd:"message"`
 	ToolCallID string `dd:"tool_call_id,+omitempty"`
 }
 
 type ToolCallStartData struct {
-	Index int    `dd:"index"`
-	ID    string `dd:"id"`
-	Name  string `dd:"name"`
+	TurnID  string `dd:"turn_id,+omitempty"`
+	RoundID string `dd:"round_id,+omitempty"`
+	Index   int    `dd:"index"`
+	ID      string `dd:"id"`
+	Name    string `dd:"name"`
 }
 
 type ToolCallArgsData struct {
+	TurnID           string `dd:"turn_id,+omitempty"`
+	RoundID          string `dd:"round_id,+omitempty"`
 	Index            int    `dd:"index"`
 	ID               string `dd:"id"`
 	ArgumentsPartial string `dd:"arguments_partial"`
 }
 
 type ToolCallExecutingData struct {
-	Index int    `dd:"index"`
-	ID    string `dd:"id"`
-	Name  string `dd:"name"`
+	TurnID  string `dd:"turn_id,+omitempty"`
+	Seq     int    `dd:"seq,+omitempty"`
+	RoundID string `dd:"round_id,+omitempty"`
+	Index   int    `dd:"index"`
+	ID      string `dd:"id"`
+	Name    string `dd:"name"`
 }
 
 type ToolCallApproveData struct {
+	TurnID    string `dd:"turn_id,+omitempty"`
+	Seq       int    `dd:"seq,+omitempty"`
+	RoundID   string `dd:"round_id,+omitempty"`
 	Index     int    `dd:"index"`
 	ID        string `dd:"id"`
 	Name      string `dd:"name"`
@@ -97,6 +116,9 @@ type ToolCallApproveData struct {
 }
 
 type ToolCallResultData struct {
+	TurnID         string `dd:"turn_id,+omitempty"`
+	Seq            int    `dd:"seq,+omitempty"`
+	RoundID        string `dd:"round_id,+omitempty"`
 	Index          int    `dd:"index"`
 	ID             string `dd:"id"`
 	Name           string `dd:"name"`
@@ -105,4 +127,24 @@ type ToolCallResultData struct {
 	Content        string `dd:"content"`
 	DurationMS     int64  `dd:"duration_ms"`
 	ExecutionState string `dd:"execution_state,+omitempty"`
+}
+
+// TurnStartData opens a turn's authoritative record: the selected alias and
+// its resolved connection origin.
+type TurnStartData struct {
+	TurnID string `dd:"turn_id"`
+	Seq    int    `dd:"seq"`
+	Alias  string `dd:"alias"`
+	Origin any    `dd:"origin,+omitempty"`
+}
+
+// TurnEndData is the turn's authoritative terminal record.
+type TurnEndData struct {
+	TurnID      string `dd:"turn_id"`
+	Seq         int    `dd:"seq"`
+	Outcome     string `dd:"outcome"`
+	Execution   string `dd:"execution"`
+	ErrorCode   string `dd:"error_code,+omitempty"`
+	Message     string `dd:"message,+omitempty"`
+	PartialText string `dd:"partial_text,+omitempty"`
 }

@@ -1,0 +1,145 @@
+{
+  "expect": "accepted",
+  "body": {
+    "model": "qwen",
+    "messages": [
+      {
+        "role": "user",
+        "content": "go",
+        "turn_id": "t1"
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "turn_id": "t1",
+        "round_id": "t1-r1",
+        "tool_calls": [
+          {
+            "id": "c1",
+            "type": "function",
+            "function": {
+              "name": "read",
+              "arguments": "{}"
+            }
+          },
+          {
+            "id": "c2",
+            "type": "function",
+            "function": {
+              "name": "write",
+              "arguments": "{}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "",
+        "tool_call_id": "c1",
+        "turn_id": "t1",
+        "round_id": "t1-r1"
+      },
+      {
+        "role": "tool",
+        "content": "pane recovery: execution outcome unknown; no result was received.\noperator note: cannot tell.",
+        "tool_call_id": "c2",
+        "turn_id": "t1",
+        "round_id": "t1-r1",
+        "recovery_placeholder": "unknown"
+      },
+      {
+        "role": "user",
+        "content": "operator reconciliation: c2: cannot tell.",
+        "turn_id": "t1"
+      },
+      {
+        "role": "user",
+        "content": "next",
+        "turn_id": "t2"
+      }
+    ],
+    "system_prompt_mode": "default",
+    "turn_id": "t2",
+    "recovery": {
+      "v": 1,
+      "turns": [
+        {
+          "id": "t1",
+          "v": 1,
+          "model_alias": "qwen",
+          "user_message_index": 0,
+          "state": "interrupted",
+          "last_seq": 7,
+          "rounds": [
+            {
+              "round_id": "t1-r1",
+              "assistant": {
+                "role": "assistant",
+                "content": null,
+                "turn_id": "t1",
+                "round_id": "t1-r1",
+                "tool_calls": [
+                  {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {
+                      "name": "read",
+                      "arguments": "{}"
+                    }
+                  },
+                  {
+                    "id": "c2",
+                    "type": "function",
+                    "function": {
+                      "name": "write",
+                      "arguments": "{}"
+                    }
+                  }
+                ]
+              },
+              "calls": [
+                {
+                  "id": "c1",
+                  "type": "function",
+                  "function": {
+                    "name": "read",
+                    "arguments": "{}"
+                  },
+                  "state": "completed",
+                  "result": {
+                    "content": "",
+                    "is_error": false
+                  }
+                },
+                {
+                  "id": "c2",
+                  "type": "function",
+                  "function": {
+                    "name": "write",
+                    "arguments": "{}"
+                  },
+                  "state": "unknown",
+                  "reconciliation": {
+                    "execution": "unknown",
+                    "note": "cannot tell."
+                  }
+                }
+              ],
+              "committed": false,
+              "message_index": 1
+            }
+          ],
+          "terminal": {
+            "outcome": "failed",
+            "execution": "unknown"
+          },
+          "reconciliation": {
+            "execution": "unknown",
+            "note": "operator reconciliation: c2: cannot tell.",
+            "message_index": 4
+          }
+        }
+      ]
+    }
+  }
+}

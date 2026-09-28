@@ -69,7 +69,7 @@ listen: 127.0.0.1:8400
 #    upstream_model: gpt-5.6-sol
 #    reasoning_effort: medium
 #    # endpoint, api_key, and max_tokens must be omitted here.
-#    # subscription chat sending is not yet enabled.
+#    # sign in with 'pane auth login openai' as the user running pane.
 
 # omitted reasoning_effort leaves backend defaults unchanged. explicit effort
 # requires a supported compatibility_profile or upstream subscription model.

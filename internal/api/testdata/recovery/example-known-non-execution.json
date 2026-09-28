@@ -1,0 +1,101 @@
+{
+  "expect": "accepted",
+  "body": {
+    "model": "qwen",
+    "messages": [
+      {
+        "role": "user",
+        "content": "add",
+        "turn_id": "t1"
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "turn_id": "t1",
+        "round_id": "t1-r1",
+        "tool_calls": [
+          {
+            "id": "c1",
+            "type": "function",
+            "function": {
+              "name": "add",
+              "arguments": "{\"a\":17,\"b\":25}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "pane recovery: this call was not executed.",
+        "tool_call_id": "c1",
+        "turn_id": "t1",
+        "round_id": "t1-r1",
+        "recovery_placeholder": "not_executed"
+      },
+      {
+        "role": "user",
+        "content": "operator reconciliation: c1 was not dispatched; leave it unexecuted.",
+        "turn_id": "t1"
+      },
+      {
+        "role": "user",
+        "content": "answer without tools.",
+        "turn_id": "t2"
+      }
+    ],
+    "system_prompt_mode": "default",
+    "turn_id": "t2",
+    "recovery": {
+      "v": 1,
+      "turns": [
+        {
+          "id": "t1",
+          "v": 1,
+          "model_alias": "qwen",
+          "user_message_index": 0,
+          "state": "interrupted",
+          "last_seq": 3,
+          "rounds": [
+            {
+              "round_id": "t1-r1",
+              "assistant": {
+                "role": "assistant",
+                "content": null,
+                "turn_id": "t1",
+                "round_id": "t1-r1",
+                "tool_calls": [
+                  {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {
+                      "name": "add",
+                      "arguments": "{\"a\":17,\"b\":25}"
+                    }
+                  }
+                ]
+              },
+              "calls": [
+                {
+                  "id": "c1",
+                  "type": "function",
+                  "function": {
+                    "name": "add",
+                    "arguments": "{\"a\":17,\"b\":25}"
+                  },
+                  "state": "not_dispatched"
+                }
+              ],
+              "committed": false,
+              "message_index": 1
+            }
+          ],
+          "reconciliation": {
+            "execution": "none",
+            "note": "operator reconciliation: c1 was not dispatched; leave it unexecuted.",
+            "message_index": 3
+          }
+        }
+      ]
+    }
+  }
+}

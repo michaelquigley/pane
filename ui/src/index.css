@@ -918,10 +918,44 @@ body {
   gap: 12px;
 }
 
-.retry-btn {
+/* the interruption surface: retry on proven non-execution, or a structured
+   operator reconciliation. it reads as a notice, not an error. */
+.recovery-panel {
+  border-left: 3px solid var(--fg-muted);
+  padding: 10px 14px;
+  font-size: 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recovery-panel p {
+  margin: 0;
+}
+
+.recovery-partial {
+  margin: 0;
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+}
+
+.recovery-call {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.recovery-panel select,
+.recovery-panel textarea {
+  font-family: var(--serif);
+  font-size: 0.8125rem;
+}
+
+.recovery-btn {
+  align-self: flex-start;
   background: none;
-  border: 1px solid var(--error);
-  color: var(--error);
+  border: 1px solid var(--fg-muted);
+  color: inherit;
   padding: 4px 12px;
   border-radius: var(--radius);
   cursor: pointer;
@@ -931,8 +965,9 @@ body {
   transition: background var(--transition);
 }
 
-.retry-btn:hover {
-  background: color-mix(in srgb, var(--error) 15%, transparent);
+.recovery-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Conversation list */

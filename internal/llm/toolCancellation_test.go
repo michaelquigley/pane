@@ -8,10 +8,18 @@ import (
 
 type cancellationSink struct {
 	events []LoopEvent
+	ends   []*TurnEnd
 	onEmit func(LoopEvent)
 }
 
 func (s *cancellationSink) Emit(event LoopEvent) error {
+	switch event.Kind {
+	case LoopTurnStart, LoopRoundReady:
+		return nil
+	case LoopTurnEnd:
+		s.ends = append(s.ends, event.End)
+		return nil
+	}
 	s.events = append(s.events, event)
 	if s.onEmit != nil {
 		s.onEmit(event)
@@ -65,7 +73,7 @@ func TestCancellationStopsToolBatchWithoutSyntheticResults(t *testing.T) {
 			adapter := &twoCallAdapter{}
 			executor := &countingToolExecutor{approvalNeeded: tt.needsApproval}
 			approvals := &waitingApproval{}
-			err := RunToolLoop(ctx, adapter,
+			err := RunToolLoop(ctx, adapter, Turn{},
 				[]Message{{Role: "user", Content: StringContent("read twice")}}, "test", 0,
 				[]Tool{{Type: "function", Function: &FunctionDef{Name: "read"}}},
 				executor, sink, approvals)
@@ -82,6 +90,13 @@ func TestCancellationStopsToolBatchWithoutSyntheticResults(t *testing.T) {
 				if event.Kind != tt.wantKinds[i] {
 					t.Fatalf("event %d = %s, want %s", i, event.Kind, tt.wantKinds[i])
 				}
+			}
+			wantExecution := ExecutionNone
+			if tt.wantCalls == 1 {
+				wantExecution = ExecutionKnown
+			}
+			if len(sink.ends) != 1 || sink.ends[0].Outcome != TurnCancelled || sink.ends[0].Execution != wantExecution {
+				t.Fatalf("turn end = %#v, want one cancelled end with execution '%s'", sink.ends, wantExecution)
 			}
 			if tt.wantCalls == 1 {
 				result := sink.events[2]

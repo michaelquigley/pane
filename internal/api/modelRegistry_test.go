@@ -15,7 +15,9 @@ import (
 	"github.com/michaelquigley/pane/internal/mcp"
 )
 
-func TestSubscriptionAliasCannotSendBeforeAdapter(t *testing.T) {
+// a subscription alias with no credential manager refuses before any stream
+// or provider request, and never falls back to the top-level endpoint.
+func TestSubscriptionAliasWithoutCredentialsNeverReachesLegacyEndpoint(t *testing.T) {
 	var calls int
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls++ }))
 	defer server.Close()
@@ -28,8 +30,8 @@ func TestSubscriptionAliasCannotSendBeforeAdapter(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"model":"subscription","messages":[{"role":"user","content":"hello"}]}`))
 	recorder := httptest.NewRecorder()
 	a.handleChat(recorder, request)
-	if recorder.Code != http.StatusServiceUnavailable || calls != 0 {
-		t.Fatalf("subscription dispatched before adapter: status=%d calls=%d", recorder.Code, calls)
+	if recorder.Code != http.StatusServiceUnavailable || !strings.Contains(recorder.Body.String(), "auth_error") || calls != 0 {
+		t.Fatalf("subscription alias without credentials: status=%d body=%q calls=%d", recorder.Code, recorder.Body.String(), calls)
 	}
 }
 

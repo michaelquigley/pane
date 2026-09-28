@@ -1,0 +1,34 @@
+{
+  "expect": "recovery_required",
+  "body": {
+    "model": "qwen",
+    "messages": [
+      {
+        "role": "user",
+        "content": "hi",
+        "turn_id": "t1"
+      },
+      {
+        "role": "user",
+        "content": "next",
+        "turn_id": "t2"
+      }
+    ],
+    "system_prompt_mode": "default",
+    "turn_id": "t2",
+    "recovery": {
+      "v": 1,
+      "turns": [
+        {
+          "id": "t1",
+          "v": 1,
+          "model_alias": "qwen",
+          "user_message_index": 0,
+          "state": "in_progress",
+          "last_seq": 0,
+          "rounds": []
+        }
+      ]
+    }
+  }
+}

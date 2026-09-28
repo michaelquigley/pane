@@ -10,6 +10,9 @@ interface Props {
   onNew: () => void
   onDelete: (id: string) => void
   onRename: (id: string, title: string) => void
+  // held while a turn is prepared: ownership of the candidate's conversation
+  // stays fixed. the handlers refuse too; this only shows it.
+  locked?: boolean
 }
 
 const encoder = new TextEncoder()
@@ -29,7 +32,7 @@ function compareIdBytes(a: string, b: string): number {
   return left.length - right.length
 }
 
-export function ConversationList({ conversations, activeId, canCreate, onSelect, onNew, onDelete, onRename }: Props) {
+export function ConversationList({ conversations, activeId, canCreate, onSelect, onNew, onDelete, onRename, locked = false }: Props) {
   // last activity first, so a commit that stamps updatedAt moves the
   // conversation to the top in the same render.
   const ordered = [...conversations].sort((a, b) =>
@@ -86,12 +89,14 @@ export function ConversationList({ conversations, activeId, canCreate, onSelect,
               title="rename"
               aria-label={`rename conversation ${c.doc.title || 'New conversation'}`}
               onClick={e => { e.stopPropagation(); if (editingId !== c.id) startEdit(c) }}
+              disabled={locked}
             >
               <EditIcon />
             </button>
             <button
               className="conversation-delete"
               onClick={e => { e.stopPropagation(); onDelete(c.id) }}
+              disabled={locked}
             >
               &times;
             </button>

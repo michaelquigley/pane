@@ -48,7 +48,7 @@ func TestRoundCompleteContinuationReloads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := (chatEventSink{writer: writer}).Emit(llm.LoopEvent{Kind: llm.LoopRoundComplete, Round: &llm.LoopRound{Assistant: original}}); err != nil {
+	if err := (&chatEventSink{writer: writer}).Emit(llm.LoopEvent{Kind: llm.LoopRoundComplete, Round: &llm.LoopRound{Assistant: original}}); err != nil {
 		t.Fatal(err)
 	}
 	body := recorder.Body.String()

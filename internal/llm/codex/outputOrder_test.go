@@ -158,7 +158,7 @@ func TestTerminalOutputOrderContradictionsRejected(t *testing.T) {
 			}))
 			executor := &fakeExecutor{}
 			request := baseRequest()
-			err = llm.RunToolLoop(context.Background(), a, request.Messages, request.Model, 0, request.Tools, executor, loopSink(func(llm.LoopEvent) error { return nil }), nil)
+			err = llm.RunToolLoop(context.Background(), a, llm.Turn{}, request.Messages, request.Model, 0, request.Tools, executor, loopSink(func(llm.LoopEvent) error { return nil }), nil)
 			if !errors.As(err, &roundErr) || roundErr.Kind != "protocol" {
 				t.Fatalf("loop got %v, want protocol error", err)
 			}
@@ -184,7 +184,7 @@ func TestTerminalOutputOrderValidRoundExecutes(t *testing.T) {
 	}))
 	executor := &fakeExecutor{}
 	request := baseRequest()
-	if err := llm.RunToolLoop(context.Background(), a, request.Messages, request.Model, 0, request.Tools, executor, loopSink(func(llm.LoopEvent) error { return nil }), nil); err != nil {
+	if err := llm.RunToolLoop(context.Background(), a, llm.Turn{}, request.Messages, request.Model, 0, request.Tools, executor, loopSink(func(llm.LoopEvent) error { return nil }), nil); err != nil {
 		t.Fatal(err)
 	}
 	if executor.calls != 1 || requests != 2 {

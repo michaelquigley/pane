@@ -8,6 +8,9 @@ interface Props {
   defaultValue: string
   onModeChange: (value: SystemPromptMode) => void
   onCustomChange: (value: string) => void
+  // while a turn is being prepared its prompt snapshot is fixed; the
+  // controls lock, including in a modal that was already open.
+  disabled?: boolean
 }
 
 // a toolbar-mount control: the description glyph on the bar is the only door
@@ -21,6 +24,7 @@ export function SystemPromptEditor({
   defaultValue,
   onModeChange,
   onCustomChange,
+  disabled = false,
 }: Props) {
   const [open, setOpen] = useState(false)
   const glyphRef = useRef<HTMLButtonElement>(null)
@@ -111,6 +115,7 @@ export function SystemPromptEditor({
               <select
                 className="system-prompt-mode"
                 value={mode}
+                disabled={disabled}
                 onChange={e => onModeChange(e.target.value as SystemPromptMode)}
               >
                 <option value="default">use default</option>
@@ -122,6 +127,7 @@ export function SystemPromptEditor({
                 <textarea
                   className="system-prompt-textarea"
                   value={customValue}
+                  disabled={disabled}
                   onChange={e => onCustomChange(e.target.value)}
                   placeholder={defaultValue || 'Enter system prompt...'}
                   rows={12}

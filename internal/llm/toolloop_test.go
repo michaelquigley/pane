@@ -2056,7 +2056,7 @@ func TestExecuteSingleToolReturnsStructuredOutcomes(t *testing.T) {
 			t.Parallel()
 
 			sw := newTestSSEWriter(t)
-			result, err := executeSingleTool(tt.ctx(), tt.pending, tt.executor, testSSELoopSink{writer: sw}, tt.approvals)
+			result, err := executeSingleTool(tt.ctx(), "r", tt.pending, tt.executor, testSSELoopSink{writer: sw}, tt.approvals)
 			if err != nil {
 				t.Fatal(err)
 			}

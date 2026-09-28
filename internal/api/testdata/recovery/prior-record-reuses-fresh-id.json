@@ -1,0 +1,105 @@
+{
+  "expect": "invalid_recovery",
+  "body": {
+    "model": "qwen",
+    "messages": [
+      {
+        "role": "user",
+        "content": "write",
+        "turn_id": "t1"
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "turn_id": "t1",
+        "round_id": "t1-r1",
+        "tool_calls": [
+          {
+            "id": "c1",
+            "type": "function",
+            "function": {
+              "name": "write_note",
+              "arguments": "{\"text\":\"hello\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "pane recovery: execution outcome unknown; no result was received.\noperator note: unsure.",
+        "tool_call_id": "c1",
+        "turn_id": "t1",
+        "round_id": "t1-r1",
+        "recovery_placeholder": "unknown"
+      },
+      {
+        "role": "user",
+        "content": "operator reconciliation: c1: unsure.",
+        "turn_id": "t1"
+      },
+      {
+        "role": "user",
+        "content": "next",
+        "turn_id": "t2"
+      }
+    ],
+    "system_prompt_mode": "default",
+    "turn_id": "t2",
+    "recovery": {
+      "v": 1,
+      "turns": [
+        {
+          "id": "t2",
+          "v": 1,
+          "model_alias": "qwen",
+          "user_message_index": 0,
+          "state": "interrupted",
+          "last_seq": 3,
+          "rounds": [
+            {
+              "round_id": "t1-r1",
+              "assistant": {
+                "role": "assistant",
+                "content": null,
+                "turn_id": "t1",
+                "round_id": "t1-r1",
+                "tool_calls": [
+                  {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {
+                      "name": "write_note",
+                      "arguments": "{\"text\":\"hello\"}"
+                    }
+                  }
+                ]
+              },
+              "calls": [
+                {
+                  "id": "c1",
+                  "type": "function",
+                  "function": {
+                    "name": "write_note",
+                    "arguments": "{\"text\":\"hello\"}"
+                  },
+                  "state": "dispatched",
+                  "reconciliation": {
+                    "execution": "unknown",
+                    "note": "unsure."
+                  }
+                }
+              ],
+              "committed": false,
+              "message_index": 1
+            }
+          ],
+          "reconciliation": {
+            "execution": "unknown",
+            "note": "operator reconciliation: c1: unsure.",
+            "message_index": 3
+          }
+        }
+      ]
+    }
+  }
+}

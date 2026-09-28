@@ -183,6 +183,27 @@ func TestSaveOversizedDocumentIs413(t *testing.T) {
 	}
 }
 
+// the browser measures the exact serialized body in UTF-8 bytes against the
+// same cap (ui/src/lib/turnRecord.test.ts builds this same document): a
+// multibyte document exactly at the cap is stored, one byte more is refused.
+func TestMultibyteDocumentAtCapAgreesWithBrowser(t *testing.T) {
+	server := newSessionsServer(t, t.TempDir())
+	prefix := `{"title":"","messages":[{"role":"user","content":"`
+	suffix := `"}],"createdAt":0,"updatedAt":0}`
+	fill := session.MaxDocumentSize - len(prefix+suffix)
+	atCap := prefix + strings.Repeat("\u00e9", 0) + strings.Repeat("é", fill/2) + strings.Repeat("a", fill%2) + suffix
+	if len(atCap) != session.MaxDocumentSize {
+		t.Fatalf("fixture is %d bytes", len(atCap))
+	}
+	if resp := do(t, server, "PUT", "/api/sessions/cap", atCap); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("document exactly at the cap: %d", resp.StatusCode)
+	}
+	over := atCap[:len(atCap)-1] + " }"
+	if resp := do(t, server, "PUT", "/api/sessions/over", over); resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Fatalf("document one byte over the cap: %d", resp.StatusCode)
+	}
+}
+
 func TestOperationalStoreFailureIs500(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("root can write into a read-only directory")

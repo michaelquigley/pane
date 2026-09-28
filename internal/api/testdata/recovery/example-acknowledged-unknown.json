@@ -1,0 +1,109 @@
+{
+  "expect": "accepted",
+  "body": {
+    "model": "qwen",
+    "messages": [
+      {
+        "role": "user",
+        "content": "write",
+        "turn_id": "t1"
+      },
+      {
+        "role": "assistant",
+        "content": null,
+        "turn_id": "t1",
+        "round_id": "t1-r1",
+        "tool_calls": [
+          {
+            "id": "c1",
+            "type": "function",
+            "function": {
+              "name": "write_note",
+              "arguments": "{\"text\":\"hello\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "content": "pane recovery: execution outcome unknown; no result was received.\noperator note: i cannot confirm the outcome and choose to proceed without repeating this call.",
+        "tool_call_id": "c1",
+        "turn_id": "t1",
+        "round_id": "t1-r1",
+        "recovery_placeholder": "unknown"
+      },
+      {
+        "role": "user",
+        "content": "operator reconciliation: c1: i cannot confirm the outcome and choose to proceed without repeating this call.",
+        "turn_id": "t1"
+      },
+      {
+        "role": "user",
+        "content": "explain what remains uncertain; do not repeat the write.",
+        "turn_id": "t2"
+      }
+    ],
+    "system_prompt_mode": "default",
+    "turn_id": "t2",
+    "recovery": {
+      "v": 1,
+      "turns": [
+        {
+          "id": "t1",
+          "v": 1,
+          "model_alias": "qwen",
+          "user_message_index": 0,
+          "state": "interrupted",
+          "last_seq": 5,
+          "rounds": [
+            {
+              "round_id": "t1-r1",
+              "assistant": {
+                "role": "assistant",
+                "content": null,
+                "turn_id": "t1",
+                "round_id": "t1-r1",
+                "tool_calls": [
+                  {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {
+                      "name": "write_note",
+                      "arguments": "{\"text\":\"hello\"}"
+                    }
+                  }
+                ]
+              },
+              "calls": [
+                {
+                  "id": "c1",
+                  "type": "function",
+                  "function": {
+                    "name": "write_note",
+                    "arguments": "{\"text\":\"hello\"}"
+                  },
+                  "state": "unknown",
+                  "reconciliation": {
+                    "execution": "unknown",
+                    "note": "i cannot confirm the outcome and choose to proceed without repeating this call."
+                  }
+                }
+              ],
+              "committed": false,
+              "message_index": 1
+            }
+          ],
+          "terminal": {
+            "outcome": "failed",
+            "execution": "unknown"
+          },
+          "reconciliation": {
+            "execution": "unknown",
+            "note": "operator reconciliation: c1: i cannot confirm the outcome and choose to proceed without repeating this call.",
+            "message_index": 3
+          }
+        }
+      ]
+    }
+  }
+}

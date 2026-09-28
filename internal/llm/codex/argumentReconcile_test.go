@@ -53,7 +53,7 @@ func runArgsLoop(t *testing.T, stream string) (int, int, error) {
 	}))
 	executor := &fakeExecutor{}
 	request := baseRequest()
-	err := llm.RunToolLoop(context.Background(), a, request.Messages, request.Model, 0, request.Tools, executor, loopSink(func(llm.LoopEvent) error { return nil }), nil)
+	err := llm.RunToolLoop(context.Background(), a, llm.Turn{}, request.Messages, request.Model, 0, request.Tools, executor, loopSink(func(llm.LoopEvent) error { return nil }), nil)
 	return executor.calls, requests, err
 }
 
