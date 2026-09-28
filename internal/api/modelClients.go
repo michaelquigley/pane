@@ -5,9 +5,9 @@ import (
 	"github.com/michaelquigley/pane/internal/llm"
 )
 
-func NewModelClients(cfg *config.Config) map[string]*llm.Client {
+func NewModelClients(cfg *config.Config) (map[string]*llm.Client, error) {
 	if !cfg.HasModelRegistry() {
-		return nil
+		return nil, nil
 	}
 
 	clients := make(map[string]*llm.Client, len(cfg.Models))
@@ -15,7 +15,19 @@ func NewModelClients(cfg *config.Config) map[string]*llm.Client {
 		if model.Provider != config.ProviderChatCompletions {
 			continue
 		}
-		clients[model.Alias] = llm.NewClient(model.Endpoint, model.UpstreamModel, model.ApiKey, cfg.IncludeUsage)
+		if model.CompatibilityProfile != "" {
+			effort := ""
+			if model.ReasoningEffort != nil {
+				effort = *model.ReasoningEffort
+			}
+			client, err := llm.NewQwenClient(model.Endpoint, model.UpstreamModel, model.ApiKey, model.CompatibilityProfile, effort, cfg.IncludeUsage)
+			if err != nil {
+				return nil, err
+			}
+			clients[model.Alias] = client
+		} else {
+			clients[model.Alias] = llm.NewClient(model.Endpoint, model.UpstreamModel, model.ApiKey, cfg.IncludeUsage)
+		}
 	}
-	return clients
+	return clients, nil
 }

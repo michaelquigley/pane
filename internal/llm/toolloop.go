@@ -138,6 +138,7 @@ func RunToolLoop(
 ) error {
 	failures := newToolFailureTracker()
 	forceFinalResponse := false
+	localReasoning := make(map[string]string)
 
 	// the history arrives from the browser (and, after an earlier round, from
 	// this loop). drop any assistant message that says nothing -- carries no
@@ -165,7 +166,7 @@ func RunToolLoop(
 
 		request := RoundRequest{
 			Model: model, Messages: requestMessages, MaxTokens: maxTokens,
-			Iteration: iteration, Intent: IntentTools,
+			Iteration: iteration, Intent: IntentTools, LocalReasoning: localReasoning,
 		}
 		if forcedFinalRequest {
 			request.Intent = IntentFinal
@@ -264,7 +265,9 @@ func RunToolLoop(
 
 		// build the assistant message
 		assistantMsg := Message{
-			Role: "assistant",
+			Role:         "assistant",
+			Origin:       final.Origin,
+			Continuation: final.Continuation,
 		}
 
 		if content != "" {
@@ -276,6 +279,9 @@ func RunToolLoop(
 			assistantMsg.ToolCalls = make([]ToolCall, 0, len(pending))
 			for _, p := range pending {
 				assistantMsg.ToolCalls = append(assistantMsg.ToolCalls, ToolCall{ID: p.ID, Type: "function", Function: ToolCallFunction{Name: p.Name, Arguments: p.Arguments}})
+			}
+			if final.LocalReasoning != "" {
+				localReasoning[pending[0].ID] = final.LocalReasoning
 			}
 		}
 

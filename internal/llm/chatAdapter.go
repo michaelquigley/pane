@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/michaelquigley/df/dd"
+	"github.com/michaelquigley/pane/internal/config"
 )
 
 // Round validates the entire chat-completions terminal boundary before
@@ -17,6 +18,25 @@ func (c *Client) Round(ctx context.Context, request RoundRequest, emit func(Roun
 	chatRequest := &ChatRequest{
 		Model: request.Model, Messages: request.Messages,
 		Tools: request.Tools, MaxTokens: request.MaxTokens,
+		LocalReasoning: request.LocalReasoning, ReasoningEffort: c.effort, Profile: c.profile,
+	}
+	if c.profile != "" && request.Intent == IntentFinal && len(chatRequest.Messages) > 0 {
+		chatRequest.Messages = append([]Message(nil), chatRequest.Messages...)
+		last := chatRequest.Messages[len(chatRequest.Messages)-1]
+		if last.Role == "system" && last.Content != nil && *last.Content == forceFinalAfterToolFailureText {
+			chatRequest.Messages = chatRequest.Messages[:len(chatRequest.Messages)-1]
+			if len(chatRequest.Messages) > 0 && chatRequest.Messages[0].Role == "system" {
+				first := chatRequest.Messages[0]
+				merged := *last.Content
+				if first.Content != nil && *first.Content != "" {
+					merged = *first.Content + "\n\n" + merged
+				}
+				first.Content = &merged
+				chatRequest.Messages[0] = first
+			} else {
+				chatRequest.Messages = append([]Message{last}, chatRequest.Messages...)
+			}
+		}
 	}
 	stream, err := c.StreamChat(ctx, chatRequest)
 	if err != nil {
@@ -25,6 +45,7 @@ func (c *Client) Round(ctx context.Context, request RoundRequest, emit func(Roun
 	defer stream.Close()
 
 	var content strings.Builder
+	var localReasoning strings.Builder
 	calls := make(map[int]*chatCall)
 	var finish string
 	var latestUsage *Usage
@@ -69,6 +90,7 @@ func (c *Client) Round(ctx context.Context, request RoundRequest, emit func(Roun
 				emit(RoundEvent{Kind: "delta", Content: *choice.Delta.Content})
 			}
 			if nonempty(reasoning) {
+				localReasoning.WriteString(*reasoning)
 				emit(RoundEvent{Kind: "thinking_delta", Content: *reasoning})
 			}
 			for _, delta := range choice.Delta.ToolCalls {
@@ -138,6 +160,10 @@ func (c *Client) Round(ctx context.Context, request RoundRequest, emit func(Roun
 		return RoundFinal{}, &RoundError{Kind: "repeated_tool_failure", Reason: "model returned tool calls after repeated tool failures"}
 	}
 	final := RoundFinal{Finish: finish, Content: content.String()}
+	if c.profile != "" {
+		final.LocalReasoning = localReasoning.String()
+		final.Origin = &RoundOrigin{Identity: RoundIdentity{Provider: config.ProviderChatCompletions, Protocol: "chat-completions", UpstreamModel: request.Model, Service: c.baseURL, Profile: c.profile}, RequestedEffort: c.effort}
+	}
 	for _, call := range calls {
 		if call.Name == "" || call.callType != "function" || !objectJSON(call.Arguments) {
 			return RoundFinal{}, roundProtocol("incomplete or malformed tool call")

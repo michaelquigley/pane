@@ -8,12 +8,15 @@ import (
 
 // ChatRequest is an OpenAI-compatible chat completion request.
 type ChatRequest struct {
-	Model         string         `dd:"model"`
-	Messages      []Message      `dd:"messages"`
-	Tools         []Tool         `dd:"tools,+omitempty"`
-	Stream        bool           `dd:"stream"`
-	StreamOptions *StreamOptions `dd:"stream_options,+omitempty"`
-	MaxTokens     int            `dd:"max_tokens,+omitempty"`
+	Model           string            `dd:"model"`
+	Messages        []Message         `dd:"messages"`
+	Tools           []Tool            `dd:"tools,+omitempty"`
+	Stream          bool              `dd:"stream"`
+	StreamOptions   *StreamOptions    `dd:"stream_options,+omitempty"`
+	MaxTokens       int               `dd:"max_tokens,+omitempty"`
+	LocalReasoning  map[string]string `dd:"-"`
+	ReasoningEffort string            `dd:"-"`
+	Profile         string            `dd:"-"`
 }
 
 type StreamOptions struct {
@@ -22,10 +25,12 @@ type StreamOptions struct {
 
 // Message is an OpenAI-compatible chat message.
 type Message struct {
-	Role       string     `dd:"role"`
-	Content    *string    `dd:",+nullable"`
-	ToolCalls  []ToolCall `dd:"tool_calls,+omitempty"`
-	ToolCallID string     `dd:"tool_call_id,+omitempty"`
+	Role         string        `dd:"role"`
+	Content      *string       `dd:",+nullable"`
+	ToolCalls    []ToolCall    `dd:"tool_calls,+omitempty"`
+	ToolCallID   string        `dd:"tool_call_id,+omitempty"`
+	Origin       *RoundOrigin  `dd:"origin,+omitempty"`
+	Continuation *Continuation `dd:"continuation,+omitempty"`
 }
 
 // Message.MarshalDd preserves the chat message's explicit null content on both
@@ -43,6 +48,23 @@ func (m Message) MarshalDd() (map[string]any, error) {
 		payload["content"] = nil
 	} else {
 		payload["content"] = *m.Content
+	}
+	if m.Origin != nil {
+		origin, err := dd.Unbind(m.Origin)
+		if err != nil {
+			return nil, err
+		}
+		payload["origin"] = origin
+	}
+	if m.Continuation != nil {
+		// top-level dd.Unbind skips MarshalDd, so the authoritative
+		// continuation encoding is called directly; otherwise opaque items
+		// unbind as byte arrays instead of JSON objects.
+		continuation, err := m.Continuation.MarshalDd()
+		if err != nil {
+			return nil, err
+		}
+		payload["continuation"] = continuation
 	}
 	return payload, nil
 }

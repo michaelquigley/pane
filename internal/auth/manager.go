@@ -76,6 +76,18 @@ func (m *Manager) Access(ctx context.Context) (string, string, error) {
 	return m.access(ctx, "")
 }
 
+// CurrentAccount reads the selected account without refreshing credentials.
+func (m *Manager) CurrentAccount(ctx context.Context) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	c, err := m.store.Read()
+	if err != nil {
+		return "", err
+	}
+	return c.AccountID, nil
+}
+
 func (m *Manager) access(ctx context.Context, expected string) (string, string, error) {
 	c, err := m.store.Read()
 	if err != nil {

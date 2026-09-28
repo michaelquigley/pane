@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/michaelquigley/df/dd"
+	"github.com/michaelquigley/pane/internal/config"
 )
 
 type Client struct {
@@ -18,6 +19,8 @@ type Client struct {
 	apiKey       string
 	DefaultModel string
 	IncludeUsage bool
+	profile      string
+	effort       string
 }
 
 func NewClient(endpoint, model, apiKey string, includeUsage bool) *Client {
@@ -28,6 +31,19 @@ func NewClient(endpoint, model, apiKey string, includeUsage bool) *Client {
 		DefaultModel: model,
 		IncludeUsage: includeUsage,
 	}
+}
+
+// NewQwenClient selects an explicit serving-engine request contract.
+func NewQwenClient(endpoint, model, apiKey, profile, effort string, includeUsage bool) (*Client, error) {
+	if profile != config.ProfileNinfer && profile != config.ProfileLlamaCPP {
+		return nil, fmt.Errorf("unsupported qwen profile '%s'", profile)
+	}
+	if effort != "" && effort != "none" && effort != "low" && effort != "medium" && effort != "xhigh" {
+		return nil, fmt.Errorf("unsupported qwen reasoning effort '%s'", effort)
+	}
+	c := NewClient(endpoint, model, apiKey, includeUsage)
+	c.profile, c.effort = profile, effort
+	return c, nil
 }
 
 func (c *Client) setAuth(req *http.Request) {
@@ -69,8 +85,26 @@ func (c *Client) StreamChat(ctx context.Context, chatReq *ChatRequest) (*StreamR
 	}
 
 	request := chatWireRequest{
-		Model: chatReq.Model, Messages: chatReq.Messages, Stream: chatReq.Stream,
+		Model: chatReq.Model, Stream: chatReq.Stream,
 		StreamOptions: chatReq.StreamOptions, MaxTokens: chatReq.MaxTokens,
+	}
+	for _, message := range chatReq.Messages {
+		wire := chatWireMessage{Message: message}
+		if message.Role == "assistant" && len(message.ToolCalls) > 0 && chatReq.Profile != "" {
+			wire.ReasoningContent = chatReq.LocalReasoning[message.ToolCalls[0].ID]
+		}
+		request.Messages = append(request.Messages, wire)
+	}
+	if chatReq.Profile != "" {
+		request.ReasoningEffort = chatReq.ReasoningEffort
+		if chatReq.Profile == config.ProfileNinfer {
+			request.PreserveThinking = new(bool)
+		} else {
+			request.ChatTemplateKwargs = map[string]any{"preserve_reasoning": false}
+			if chatReq.ReasoningEffort == "none" {
+				request.Temperature, request.TopP, request.TopK = 0.7, 0.8, 20
+			}
+		}
 	}
 	for _, tool := range chatReq.Tools {
 		if tool.Function == nil {
@@ -119,12 +153,38 @@ func (c *Client) StreamChat(ctx context.Context, chatReq *ChatRequest) (*StreamR
 }
 
 type chatWireRequest struct {
-	Model         string
-	Messages      []Message
-	Tools         []chatWireTool `dd:",+omitempty"`
-	Stream        bool
-	StreamOptions *StreamOptions `dd:",+omitempty"`
-	MaxTokens     int            `dd:",+omitempty"`
+	Model              string
+	Messages           []chatWireMessage
+	Tools              []chatWireTool `dd:",+omitempty"`
+	Stream             bool
+	StreamOptions      *StreamOptions `dd:",+omitempty"`
+	MaxTokens          int            `dd:",+omitempty"`
+	ReasoningEffort    string         `dd:",+omitempty"`
+	PreserveThinking   *bool          `dd:",+omitempty"`
+	ChatTemplateKwargs map[string]any `dd:",+omitempty"`
+	Temperature        float64        `dd:",+omitempty"`
+	TopP               float64        `dd:",+omitempty"`
+	TopK               int            `dd:",+omitempty"`
+}
+
+type chatWireMessage struct {
+	Message
+	ReasoningContent string
+}
+
+func (m chatWireMessage) MarshalDd() (map[string]any, error) {
+	// pane's round record never goes upstream; clearing it on a copy before
+	// marshaling keeps an unusable stored envelope from blocking the request.
+	message := m.Message
+	message.Origin, message.Continuation = nil, nil
+	payload, err := message.MarshalDd()
+	if err != nil {
+		return nil, err
+	}
+	if m.ReasoningContent != "" {
+		payload["reasoning_content"] = m.ReasoningContent
+	}
+	return payload, nil
 }
 
 type chatWireTool struct {

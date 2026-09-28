@@ -70,7 +70,10 @@ func run(_ *cobra.Command, _ []string) {
 	mcpMgr.Start(ctx)
 
 	llmClient := llm.NewClient(cfg.Endpoint, cfg.Model, cfg.ApiKey, cfg.IncludeUsage)
-	modelClients := api.NewModelClients(cfg)
+	modelClients, err := api.NewModelClients(cfg)
+	if err != nil {
+		dl.Fatalf("model clients: %v", err)
+	}
 	a := api.NewAPI(cfg, llmClient, modelClients, mcpMgr, sessions)
 
 	mux := http.NewServeMux()

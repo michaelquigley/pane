@@ -67,7 +67,7 @@ mcp:
 
 the `models` keys are the names shown in pane. `endpoint` and `api_key` are optional within each model: an omitted value inherits the top-level setting, while `api_key: ""` intentionally disables bearer authentication for that model. `upstream_model` defaults to the alias. when `models` is omitted, pane keeps the original single-endpoint behavior and discovers models from that endpoint.
 
-the registry also accepts `provider`, `compatibility_profile`, and `reasoning_effort`. `provider: openai-codex` validates subscription model settings and uses credentials managed by `pane auth login openai` (or `--method device`). `pane auth status openai` checks local readiness and `pane auth logout openai` removes pane's local credential. subscription chat sending is not yet enabled; configured aliases currently return an unavailable response. see [the current design record](docs/current/pane.md) for the supported effort values and field rules.
+the registry also accepts `provider`, `compatibility_profile`, and `reasoning_effort`. the qwen compatibility profiles now apply their selected effort and serving-engine controls to chat requests. `provider: openai-codex` validates subscription model settings and uses credentials managed by `pane auth login openai` (or `--method device`). `pane auth status openai` checks local readiness and `pane auth logout openai` removes pane's local credential. subscription chat sending is not yet enabled; configured aliases currently return an unavailable response. see [the current design record](docs/current/pane.md) for the supported effort values and field rules.
 
 ## MCP servers
 

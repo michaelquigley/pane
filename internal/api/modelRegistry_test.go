@@ -24,7 +24,7 @@ func TestSubscriptionAliasCannotSendBeforeAdapter(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	a := NewAPI(cfg, llm.NewClient(cfg.Endpoint, cfg.Model, "", false), NewModelClients(cfg), mcp.NewManager(nil), nil)
+	a := NewAPI(cfg, llm.NewClient(cfg.Endpoint, cfg.Model, "", false), mustModelClients(t, cfg), mcp.NewManager(nil), nil)
 	request := httptest.NewRequest(http.MethodPost, "/api/chat", strings.NewReader(`{"model":"subscription","messages":[{"role":"user","content":"hello"}]}`))
 	recorder := httptest.NewRecorder()
 	a.handleChat(recorder, request)
@@ -108,7 +108,7 @@ func TestRegistryRoutesAliasesThroughProductionClientMap(t *testing.T) {
 	}
 
 	legacyClient := llm.NewClient(cfg.Endpoint, cfg.Model, cfg.ApiKey, cfg.IncludeUsage)
-	modelClients := NewModelClients(cfg)
+	modelClients := mustModelClients(t, cfg)
 	a := NewAPI(cfg, legacyClient, modelClients, mcp.NewManager(nil), nil)
 
 	sendRegistryChat(t, a, "qwen@eleven")
@@ -175,7 +175,7 @@ func TestRegistryModelsAndConfigComeFromProfiles(t *testing.T) {
 			"m-model": {ContextWindow: apiIntPointer(163840)},
 		},
 	}
-	a := NewAPI(cfg, llm.NewClient(upstream.URL, cfg.Model, "", false), NewModelClients(cfg), mcp.NewManager(nil), nil)
+	a := NewAPI(cfg, llm.NewClient(upstream.URL, cfg.Model, "", false), mustModelClients(t, cfg), mcp.NewManager(nil), nil)
 
 	modelsRecorder := httptest.NewRecorder()
 	a.handleModels(modelsRecorder, httptest.NewRequest(http.MethodGet, "/api/models", nil))
@@ -225,7 +225,7 @@ func TestLegacyModelsStillProxyUpstream(t *testing.T) {
 	defer upstream.Close()
 
 	cfg := &config.Config{Endpoint: upstream.URL, Model: "legacy-model"}
-	a := NewAPI(cfg, llm.NewClient(upstream.URL, cfg.Model, "", false), NewModelClients(cfg), mcp.NewManager(nil), nil)
+	a := NewAPI(cfg, llm.NewClient(upstream.URL, cfg.Model, "", false), mustModelClients(t, cfg), mcp.NewManager(nil), nil)
 	recorder := httptest.NewRecorder()
 	a.handleModels(recorder, httptest.NewRequest(http.MethodGet, "/api/models", nil))
 
@@ -238,6 +238,28 @@ func TestLegacyModelsStillProxyUpstream(t *testing.T) {
 	}
 }
 
+func TestRegistryQwenProfileUsesProfiledClient(t *testing.T) {
+	var request map[string]any
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Error(err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer upstream.Close()
+	effort := "none"
+	cfg := &config.Config{Endpoint: upstream.URL, Model: "qwen", Listen: "127.0.0.1:8400", Models: map[string]*config.ModelConfig{"qwen": {UpstreamModel: "qwen3.8-27b", CompatibilityProfile: config.ProfileLlamaCPP, ReasoningEffort: &effort}}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	a := NewAPI(cfg, llm.NewClient(upstream.URL, cfg.Model, "", false), mustModelClients(t, cfg), mcp.NewManager(nil), nil)
+	sendRegistryChat(t, a, "qwen")
+	if request["reasoning_effort"] != "none" || request["temperature"] != 0.7 || request["top_p"] != 0.8 || request["top_k"] != float64(20) {
+		t.Fatalf("profile controls were not sent: %#v", request)
+	}
+}
+
 func sendRegistryChat(t *testing.T, a *API, model string) {
 	t.Helper()
 	body := fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"hello"}]}`, model)
@@ -246,6 +268,15 @@ func sendRegistryChat(t *testing.T, a *API, model string) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("chat through %q failed: status=%d body=%q", model, recorder.Code, recorder.Body.String())
 	}
+}
+
+func mustModelClients(t *testing.T, cfg *config.Config) map[string]*llm.Client {
+	t.Helper()
+	clients, err := NewModelClients(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return clients
 }
 
 func apiIntPointer(value int) *int {
