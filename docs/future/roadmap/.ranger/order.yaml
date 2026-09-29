@@ -22,3 +22,7 @@ horizon:
   - toolbar-screen-reader-announcer.md
 inbox:
   - local-token-estimation.md
+  - artifact-file-and-diff-inspection.md
+  - interrupted-turn-diagnostics.md
+  - lightweight-project-arrival-context.md
+  - scoped-artifact-formatting-and-validation.md
