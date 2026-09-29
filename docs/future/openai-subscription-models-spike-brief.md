@@ -1,10 +1,12 @@
 # openai subscription models: verification spike
 
+historical plan, retained with the spike evidence. the completed production spec/work order have been retired; built behavior and acceptance limits are in [the current design record](../current/pane.md#subscription-continuation-and-acceptance-limits). this brief grants no new traffic allowance.
+
 date: 2026-09-23. scope accepted for a bounded protocol investigation; live login and generation require the separate approval below. this is a prototype handoff, not the production implementation work order.
 
 ## assignment
 
-bootstrap from pane's `AGENTS.md`, recent `docs/journal/` entries, and [the design](openai-subscription-models.md). build an isolated go protocol harness and return evidence sufficient to finalize the adapter, continuation, and recovery schemas. do not implement the feature in pane's normal chat path or reopen accepted behavioral decisions. surface contradictions rather than designing around them silently.
+bootstrap from pane's `AGENTS.md`, recent `docs/journal/` entries, and the original design (`docs/future/openai-subscription-models.md`, now in git history). build an isolated go protocol harness and return evidence sufficient to finalize the adapter, continuation, and recovery schemas. do not implement the feature in pane's normal chat path or reopen accepted behavioral decisions. surface contradictions rather than designing around them silently.
 
 the exact subscription targets are 'gpt-5.6-sol' and 'gpt-6-astra'. qwen targets are the existing 'qwen3.8-27b' connections on eleven (ninfer) and fortyfive (llama.cpp). do not substitute models or inference engines when a target fails.
 

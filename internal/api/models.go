@@ -18,7 +18,6 @@ const (
 	authNotRequired         = "not_required"
 	authLoginRequired       = "login_required"
 	authCredentialAvailable = "credential_available"
-	authRefreshPending      = "refresh_pending"
 	authError               = "error"
 )
 
@@ -46,7 +45,7 @@ type modelError struct {
 
 // modelFailure is the last observed runtime failure for one alias. auth
 // failures carry the credential expiry marker they were observed under, so a
-// login, refresh, or logout that changes the expiry retires them. a
+// login or logout that changes the expiry retires them. a
 // replacement with the same expiry keeps a stale auth warning until the next
 // completed turn; that is accepted rather than versioning credentials.
 type modelFailure struct {
@@ -106,14 +105,11 @@ func (a *API) authState(model config.ResolvedModel) (string, *modelError, string
 	if err != nil {
 		return authError, &modelError{Code: "auth_error", Message: "subscription credentials are unreadable; run 'pane auth login openai'", At: time.Now().UnixMilli()}, ""
 	}
-	switch {
-	case !status.SignedIn:
+	// a missing or expired login both call for 'pane auth login openai'.
+	if !status.SignedIn {
 		return authLoginRequired, nil, status.ExpiryMarker
-	case status.RefreshNeeded:
-		return authRefreshPending, nil, status.ExpiryMarker
-	default:
-		return authCredentialAvailable, nil, status.ExpiryMarker
 	}
+	return authCredentialAvailable, nil, status.ExpiryMarker
 }
 
 func (a *API) lastFailure(alias, expiry string) (modelError, bool) {

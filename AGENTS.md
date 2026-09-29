@@ -32,7 +32,7 @@ pane/
 │   └── new.go                  # generate pane.yaml
 ├── internal/
 │   ├── config/                 # Config structs, YAML cascade loader, validation, effort capabilities
-│   ├── auth/                   # subscription credential manager: private store, lock, login, refresh
+│   ├── auth/                   # subscription credential manager: private store, lock, device login, expiry
 │   ├── llm/                    # provider-neutral rounds and the shared tool loop
 │   │   ├── round.go            # RoundAdapter, RoundIdentity/Origin, versioned Continuation, ToolExecution
 │   │   ├── loopEvent.go        # LoopEvent, Turn, TurnEnd: the lifecycle the API maps to SSE
@@ -157,7 +157,7 @@ the optional `models` map is keyed by the aliases exposed to the browser. `endpo
 pane                    # start server (default command)
 pane new                # generate pane.yaml in current directory
 pane version            # show version
-pane auth login openai  # subscription login (--method device for another machine); also status, logout
+pane auth login openai  # subscription device-code login, from any browser; also status, logout
 pane --config ./my.yaml # start with explicit config
 pane -v                 # verbose logging (debug level)
 ```

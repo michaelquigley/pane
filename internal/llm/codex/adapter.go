@@ -70,7 +70,13 @@ func (a *Adapter) Round(ctx context.Context, request llm.RoundRequest, emit func
 	if len(body) > 32*1024*1024 {
 		return llm.RoundFinal{}, &llm.RoundError{Kind: "budget", Reason: "request exceeds 32 MiB"}
 	}
+	// the credential is rechecked before every round: an expiry or logout
+	// after earlier tool work stops the turn here, before any request, with
+	// no renewal and no retry.
 	token, err := a.credentials.AccessForAccount(ctx, a.account)
+	if errors.Is(err, auth.ErrLoginRequired) {
+		return llm.RoundFinal{}, &llm.RoundError{Kind: "login_required", Reason: "the subscription login expired or was removed; run 'pane auth login openai'"}
+	}
 	if err != nil {
 		return llm.RoundFinal{}, &llm.RoundError{Kind: "auth", Err: err}
 	}
@@ -97,13 +103,15 @@ func (a *Adapter) Round(ctx context.Context, request llm.RoundRequest, emit func
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1024))
 		kind := "upstream"
+		reason := fmt.Sprintf("generation failed (status %d)", resp.StatusCode)
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 			kind = "auth"
+			reason = fmt.Sprintf("the provider rejected the subscription credentials (status %d); run 'pane auth login openai'", resp.StatusCode)
 		}
 		if resp.StatusCode == http.StatusTooManyRequests {
 			kind = "allowance"
 		}
-		return llm.RoundFinal{}, &llm.RoundError{Kind: kind, Reason: fmt.Sprintf("generation failed (status %d)", resp.StatusCode)}
+		return llm.RoundFinal{}, &llm.RoundError{Kind: kind, Reason: reason}
 	}
 	return parseStream(ctx, resp.Body, emit, a.identity, a.alias, a.effort, request.Iteration)
 }

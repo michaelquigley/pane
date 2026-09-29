@@ -18,9 +18,21 @@ import (
 
 var ErrLoginRequired = errors.New("login required")
 
+// Credential is what pane stores: access token, expiry, and account. new
+// files carry no refresh token.
 type Credential struct {
 	Access    string
-	Refresh   string
+	ExpiresAt time.Time
+	AccountID string
+}
+
+// credentialFile is the read-side view of the auth file. it tolerates the
+// legacy 'refresh' field written by earlier builds, solely so those files
+// still bind strictly; the value is discarded, never used, logged, or
+// rewritten, and the file is not migrated on read.
+type credentialFile struct {
+	Access    string
+	Refresh   string `dd:",+omitempty"`
 	ExpiresAt time.Time
 	AccountID string
 }
@@ -121,14 +133,14 @@ func (s *Store) Read() (*Credential, error) {
 	if len(b) > 64*1024 {
 		return nil, errors.New("auth file is corrupt or too large")
 	}
-	var c Credential
-	if err := dd.BindJSON(&c, b, dd.Strict()); err != nil {
+	var file credentialFile
+	if err := dd.BindJSON(&file, b, dd.Strict()); err != nil {
 		return nil, errors.New("auth file is corrupt")
 	}
-	if c.Access == "" || c.Refresh == "" || c.AccountID == "" || c.ExpiresAt.IsZero() {
+	if file.Access == "" || file.AccountID == "" || file.ExpiresAt.IsZero() {
 		return nil, errors.New("auth file is corrupt")
 	}
-	return &c, nil
+	return &Credential{Access: file.Access, ExpiresAt: file.ExpiresAt, AccountID: file.AccountID}, nil
 }
 
 func (s *Store) withLock(ctx context.Context, fn func() error) error {
@@ -194,7 +206,7 @@ func syncDir(dir string) error {
 }
 
 func (s *Store) Save(ctx context.Context, c *Credential) error {
-	if c == nil || c.Access == "" || c.Refresh == "" || c.AccountID == "" || c.ExpiresAt.IsZero() {
+	if c == nil || c.Access == "" || c.AccountID == "" || c.ExpiresAt.IsZero() {
 		return errors.New("incomplete credential")
 	}
 	return s.withLock(ctx, func() error { return s.write(c) })

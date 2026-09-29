@@ -13,29 +13,18 @@ func init() { rootCmd.AddCommand(newAuthCommand()) }
 
 func newAuthCommand() *cobra.Command {
 	command := &cobra.Command{Use: "auth", Short: "manage pane's openai subscription login", Args: cobra.NoArgs}
-	var method string
-	login := &cobra.Command{Use: "login openai", Short: "sign in to openai for pane", Args: openaiArg, RunE: func(cmd *cobra.Command, _ []string) error {
+	login := &cobra.Command{Use: "login openai", Short: "sign in to openai for pane with a device code, from any browser", Args: openaiArg, RunE: func(cmd *cobra.Command, _ []string) error {
 		store, err := auth.OpenGlobalStore()
 		if err != nil {
 			return err
 		}
-		manager := auth.NewManager(store)
 		show := func(message string) { fmt.Fprintln(cmd.OutOrStdout(), message) }
-		switch method {
-		case "browser":
-			err = manager.LoginBrowser(cmd.Context(), show)
-		case "device":
-			err = manager.LoginDevice(cmd.Context(), show)
-		default:
-			return fmt.Errorf("unknown login method '%s'", method)
-		}
-		if err != nil {
+		if err := auth.NewManager(store).LoginDevice(cmd.Context(), show); err != nil {
 			return err
 		}
 		_, err = io.WriteString(cmd.OutOrStdout(), "signed in to openai for pane\n")
 		return err
 	}}
-	login.Flags().StringVar(&method, "method", "browser", "login method: browser or device")
 	status := &cobra.Command{Use: "status openai", Short: "show local openai login readiness", Args: openaiArg, RunE: func(cmd *cobra.Command, _ []string) error {
 		store, err := auth.OpenGlobalStore()
 		if err != nil {
@@ -45,12 +34,12 @@ func newAuthCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		message := "openai: login required\n"
+		message := "openai: login required; run 'pane auth login openai'\n"
 		if state.SignedIn {
 			message = "openai: signed in\n"
 		}
-		if state.RefreshNeeded {
-			message = "openai: signed in; token refresh needed before use\n"
+		if state.Expired {
+			message = "openai: login expired; run 'pane auth login openai'\n"
 		}
 		_, err = io.WriteString(cmd.OutOrStdout(), message)
 		return err

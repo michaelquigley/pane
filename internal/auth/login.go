@@ -3,14 +3,9 @@ package auth
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -37,82 +32,6 @@ type devicePollResponse struct {
 	CodeVerifier      string
 }
 type deviceErrorResponse struct{ Error string }
-
-func pkce() (string, string, error) {
-	var b [32]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", "", err
-	}
-	verifier := base64.RawURLEncoding.EncodeToString(b[:])
-	sum := sha256.Sum256([]byte(verifier))
-	return verifier, base64.RawURLEncoding.EncodeToString(sum[:]), nil
-}
-
-func (m *Manager) LoginBrowser(ctx context.Context, show Prompter) error {
-	return m.loginBrowserAt(ctx, show, "127.0.0.1:1455", RedirectURI)
-}
-
-func (m *Manager) loginBrowserAt(ctx context.Context, show Prompter, address, redirect string) error {
-	verifier, challenge, err := pkce()
-	if err != nil {
-		return err
-	}
-	var random [16]byte
-	if _, err := rand.Read(random[:]); err != nil {
-		return err
-	}
-	state := hex.EncodeToString(random[:])
-	u, _ := url.Parse(AuthorizeURL)
-	q := u.Query()
-	q.Set("response_type", "code")
-	q.Set("client_id", ClientID)
-	q.Set("redirect_uri", redirect)
-	q.Set("scope", Scope)
-	q.Set("code_challenge", challenge)
-	q.Set("code_challenge_method", "S256")
-	q.Set("state", state)
-	q.Set("id_token_add_organizations", "true")
-	q.Set("codex_cli_simplified_flow", "true")
-	q.Set("originator", "pane")
-	u.RawQuery = q.Encode()
-
-	listener, err := net.Listen("tcp", address)
-	if err != nil {
-		return fmt.Errorf("callback listener unavailable: %w", err)
-	}
-	codeCh := make(chan string, 1)
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/auth/callback" || r.Method != http.MethodGet {
-			http.NotFound(w, r)
-			return
-		}
-		if len(r.URL.Query()["state"]) != 1 || r.URL.Query().Get("state") != state {
-			http.Error(w, "state mismatch", http.StatusBadRequest)
-			return
-		}
-		if len(r.URL.Query()["code"]) != 1 || r.URL.Query().Get("code") == "" {
-			http.Error(w, "missing code", http.StatusBadRequest)
-			return
-		}
-		select {
-		case codeCh <- r.URL.Query().Get("code"):
-			_, _ = io.WriteString(w, "pane login complete. you can close this window.")
-		default:
-			http.Error(w, "login already received", http.StatusConflict)
-		}
-	})}
-	go func() { _ = server.Serve(listener) }()
-	defer server.Close()
-	show("open this url in a browser on this machine to sign in:\n'" + u.String() + "'")
-	loginCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer cancel()
-	select {
-	case code := <-codeCh:
-		return m.exchange(loginCtx, code, verifier, redirect)
-	case <-loginCtx.Done():
-		return loginCtx.Err()
-	}
-}
 
 func (m *Manager) LoginDevice(ctx context.Context, show Prompter) error {
 	body, err := dd.UnbindJSON(deviceStartRequest{ClientID: ClientID})

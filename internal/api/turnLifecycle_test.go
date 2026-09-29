@@ -341,3 +341,72 @@ func TestQwenCanaryStaysRequestLocalThroughAPI(t *testing.T) {
 		t.Fatalf("saved display thinking became replay input: %s", last)
 	}
 }
+
+func TestExpiredSubscriptionLoginRefusesBeforeGeneration(t *testing.T) {
+	h := newTurnHarness(t)
+	h.subscription.expire()
+	recorder, _ := h.post(t, freshTurn("sol", "hello"))
+	if recorder.Code != http.StatusServiceUnavailable || chatErrorCode(t, recorder) != "login_required" || len(h.codex.requests()) != 0 {
+		t.Fatalf("expired login: status=%d body=%q requests=%d", recorder.Code, recorder.Body.String(), len(h.codex.requests()))
+	}
+	if !strings.Contains(recorder.Body.String(), "pane auth login openai") {
+		t.Fatalf("no device-login guidance: %s", recorder.Body.String())
+	}
+}
+
+// an expiry or logout between tool rounds stops the turn before the next
+// generation request: the received result stays recorded, nothing is
+// renewed, and neither the generation nor the tool is repeated.
+func TestExpiryBetweenToolRoundsKeepsResultWithoutRetry(t *testing.T) {
+	h := newTurnHarness(t)
+	h.codex.script = []string{codexToolCall("add", `{"a":1}`), codexText("done")}
+	h.tools.onCall = h.subscription.expire
+	recorder, events := h.post(t, freshTurn("sol", "add"))
+	if recorder.Code != http.StatusOK || len(h.codex.requests()) != 1 || h.tools.count() != 1 {
+		t.Fatalf("status=%d generation requests=%d executions=%d", recorder.Code, len(h.codex.requests()), h.tools.count())
+	}
+	var result, complete, done bool
+	for _, event := range events {
+		switch event.Type {
+		case "tool_call_result":
+			result = event.Data["execution_state"] == "result_received" && event.Data["content"] == "42"
+		case "round_complete":
+			complete = true
+		case "done":
+			done = true
+		}
+	}
+	end := events[len(events)-1]
+	if !result || !complete || done || end.Type != "turn_end" || end.Data["outcome"] != "failed" ||
+		end.Data["execution"] != "known" || end.Data["error_code"] != "login_required" {
+		t.Fatalf("result=%v complete=%v done=%v end=%v", result, complete, done, end.Data)
+	}
+	if !strings.Contains(recorder.Body.String(), "pane auth login openai") {
+		t.Fatal("no device-login guidance in the stream")
+	}
+}
+
+func TestExpiredLoginReportsLoginRequiredLocally(t *testing.T) {
+	h := newTurnHarness(t)
+	h.subscription.expire()
+	recorder := httptest.NewRecorder()
+	h.api.handleModels(recorder, httptest.NewRequest(http.MethodGet, "/api/models", nil))
+	var body struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range body.Data {
+		want := "not_required"
+		if entry["provider"] == "openai-codex" {
+			want = "login_required"
+		}
+		if entry["auth_state"] != want {
+			t.Fatalf("%v auth_state = %v, want %s", entry["id"], entry["auth_state"], want)
+		}
+	}
+	if h.subscription.accesses != 0 {
+		t.Fatal("listing requested credential access")
+	}
+}

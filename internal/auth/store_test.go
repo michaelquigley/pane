@@ -14,7 +14,7 @@ import (
 )
 
 func testCredential() *Credential {
-	return &Credential{Access: "access-canary", Refresh: "refresh-canary", AccountID: "acct-pane-test-a", ExpiresAt: time.Now().Add(time.Hour)}
+	return &Credential{Access: "access-canary", AccountID: "acct-pane-test-a", ExpiresAt: time.Now().Add(time.Hour)}
 }
 
 func TestPrivateStore(t *testing.T) {

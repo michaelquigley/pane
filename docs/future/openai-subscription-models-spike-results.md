@@ -1,5 +1,7 @@
 # openai subscription models: spike results
 
+historical prototype evidence, retained unchanged below. current production behavior, the later sol live check, and accepted verification limits are in [the current design record](../current/pane.md#subscription-continuation-and-acceptance-limits); browser login and automatic refresh described in this report are not current pane features. no prior run allowance carries forward.
+
 date: 2026-09-23. status: **stages 1–3 complete.** michael approved the run plan on 2026-09-23, with originator 'pane' and the qwen key read from `~/.config/pane/config.yaml`, and both hosts were available. the run used 21 of 23 approved upstream requests over about 2 minutes 10 seconds (sol 9, astra 2, eleven 5, fortyfive 5, auth 0). there were no retries, and no failure beyond S6's intended probe. one core question remained unknown. a separately authorized, subscription-only follow-up the same afternoon then **passed live encrypted-reasoning replay on both models** (6 of 6 requests; see 'encrypted-reasoning replay follow-up').
 
 executing agent: claude code (opus 5.5), on host 'fortyfive'. prototype: `spike/openai-subscription/`, its own go module and outside pane's production packages. production config, storage, frontend, and `pane.service` are unchanged.

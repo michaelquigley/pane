@@ -220,7 +220,7 @@ export interface ModelsResponse {
   data: ModelInfo[]
 }
 
-export type AuthState = 'not_required' | 'login_required' | 'credential_available' | 'refresh_pending' | 'error'
+export type AuthState = 'not_required' | 'login_required' | 'credential_available' | 'error'
 
 export interface ModelInfo {
   id: string

@@ -25,6 +25,7 @@ type fakeSubscription struct {
 	account   string
 	token     string
 	expiry    string
+	expired   bool
 	statusErr error
 	accesses  int
 	statuses  int
@@ -33,6 +34,9 @@ type fakeSubscription struct {
 func (s *fakeSubscription) CurrentAccount(context.Context) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.expired {
+		return "", auth.ErrLoginRequired
+	}
 	return s.account, nil
 }
 
@@ -40,6 +44,9 @@ func (s *fakeSubscription) AccessForAccount(_ context.Context, account string) (
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.accesses++
+	if s.expired || s.account == "" {
+		return "", auth.ErrLoginRequired
+	}
 	if account != s.account {
 		return "", errors.New("subscription account changed during request")
 	}
@@ -56,7 +63,16 @@ func (s *fakeSubscription) Status() (auth.Status, error) {
 	if s.account == "" {
 		return auth.Status{}, nil
 	}
+	if s.expired {
+		return auth.Status{Expired: true, ExpiryMarker: s.expiry}, nil
+	}
 	return auth.Status{SignedIn: true, ExpiryMarker: s.expiry}, nil
+}
+
+func (s *fakeSubscription) expire() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.expired = true
 }
 
 func (s *fakeSubscription) set(account, token, expiry string) {
@@ -119,6 +135,9 @@ func (p *scriptedProvider) requests() []string {
 type countingTools struct {
 	mu    sync.Mutex
 	calls []string
+	// onCall runs after each execution, for tests that change state between
+	// tool rounds.
+	onCall func()
 }
 
 func (c *countingTools) GetAllModelTools() []llm.Tool {
@@ -134,6 +153,9 @@ func (c *countingTools) CallTool(_ context.Context, name string, _ map[string]an
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.calls = append(c.calls, name)
+	if c.onCall != nil {
+		c.onCall()
+	}
 	return llm.ToolExecution{Dispatch: llm.ResultReceived, Content: "42"}
 }
 

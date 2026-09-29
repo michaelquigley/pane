@@ -16,22 +16,20 @@ import (
 const (
 	ClientID          = "app_EMoamEEZ73f0CkXaXp7hrann"
 	AuthBase          = "https://auth.openai.com"
-	AuthorizeURL      = AuthBase + "/oauth/authorize"
 	TokenURL          = AuthBase + "/oauth/token"
-	RedirectURI       = "http://localhost:1455/auth/callback"
 	DeviceUserCodeURL = AuthBase + "/api/accounts/deviceauth/usercode"
 	DeviceTokenURL    = AuthBase + "/api/accounts/deviceauth/token"
 	DeviceVerifyURL   = AuthBase + "/codex/device"
 	DeviceRedirectURI = AuthBase + "/deviceauth/callback"
-	Scope             = "openid profile email offline_access"
 )
-
-const refreshWindow = 5 * time.Minute
 
 type endpoints struct{ token, deviceStart, devicePoll string }
 
 var productionEndpoints = endpoints{TokenURL, DeviceUserCodeURL, DeviceTokenURL}
 
+// Manager supplies the one device-login credential to every subscription
+// alias. it never renews a credential: an expired or removed login calls for
+// another explicit 'pane auth login openai'.
 type Manager struct {
 	store     *Store
 	client    *LockedClient
@@ -45,22 +43,30 @@ func newManager(store *Store, base http.RoundTripper, dest endpoints) *Manager {
 	return &Manager{store: store, client: lockedClient(base, dest.token, dest.deviceStart, dest.devicePoll), endpoints: dest, now: time.Now}
 }
 
-type RefreshError struct {
+// TokenError reports a failed authorization-code exchange.
+type TokenError struct {
 	Rejected bool
 	Status   int
 }
 
-func (e *RefreshError) Error() string {
+func (e *TokenError) Error() string {
 	if e.Rejected {
-		return fmt.Sprintf("refresh rejected (status %d): login required", e.Status)
+		return fmt.Sprintf("token exchange rejected (status %d)", e.Status)
 	}
-	return fmt.Sprintf("refresh failed (status %d)", e.Status)
+	return fmt.Sprintf("token exchange failed (status %d)", e.Status)
 }
-func (e *RefreshError) Unwrap() error {
-	if e.Rejected {
-		return ErrLoginRequired
+
+// current reads the stored credential and treats it as absent once the
+// clock reaches its expiry: 'now >= expires_at' means login required.
+func (m *Manager) current() (*Credential, error) {
+	c, err := m.store.Read()
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	if !m.now().Before(c.ExpiresAt) {
+		return nil, ErrLoginRequired
+	}
+	return c, nil
 }
 
 // account-bound access prevents a mid-turn login from silently changing identity.
@@ -76,72 +82,46 @@ func (m *Manager) Access(ctx context.Context) (string, string, error) {
 	return m.access(ctx, "")
 }
 
-// CurrentAccount reads the selected account without refreshing credentials.
+// CurrentAccount reads the selected account of an unexpired login.
 func (m *Manager) CurrentAccount(ctx context.Context) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	c, err := m.store.Read()
+	c, err := m.current()
 	if err != nil {
 		return "", err
 	}
 	return c.AccountID, nil
 }
 
+// access is a local read: it makes no network request and never renews.
 func (m *Manager) access(ctx context.Context, expected string) (string, string, error) {
-	c, err := m.store.Read()
+	if err := ctx.Err(); err != nil {
+		return "", "", err
+	}
+	c, err := m.current()
 	if err != nil {
 		return "", "", err
 	}
 	if expected != "" && c.AccountID != expected {
 		return "", "", errors.New("subscription account changed during request")
 	}
-	if m.now().Add(refreshWindow).Before(c.ExpiresAt) {
-		return c.Access, c.AccountID, nil
-	}
-	var out *Credential
-	err = m.store.withLock(ctx, func() error {
-		current, err := m.store.Read()
-		if err != nil {
-			return err
-		}
-		if expected != "" && current.AccountID != expected {
-			return errors.New("subscription account changed during request")
-		}
-		if m.now().Add(refreshWindow).Before(current.ExpiresAt) {
-			out = current
-			return nil
-		}
-		next, err := m.refresh(ctx, current.Refresh)
-		if err != nil {
-			return err
-		}
-		if next.AccountID != current.AccountID {
-			return errors.New("refresh returned a different account; credentials unchanged")
-		}
-		if err := m.store.write(next); err != nil {
-			return err
-		}
-		out = next
-		return nil
-	})
-	if err != nil {
-		return "", "", err
-	}
-	return out.Access, out.AccountID, nil
+	return c.Access, c.AccountID, nil
 }
 
 type Status struct {
-	SignedIn      bool
-	RefreshNeeded bool
+	// SignedIn means an unexpired credential is stored and usable locally;
+	// Expired means its expiry has been reached and another login is needed.
+	SignedIn bool
+	Expired  bool
 	// ExpiryMarker is the stored credential's expiration time, empty when
-	// signed out. login, refresh, and logout normally change it, but a
-	// replacement with the same expiry keeps it; it is not a credential
-	// version. a non-secret comparison value, never shown.
+	// signed out. login and logout normally change it, but a replacement
+	// with the same expiry keeps it; it is not a credential version. a
+	// non-secret comparison value, never shown.
 	ExpiryMarker string
 }
 
-// Status inspects the local credential only: no refresh, no network.
+// Status inspects the local credential only: no network.
 func (m *Manager) Status() (Status, error) {
 	c, err := m.store.Read()
 	if errors.Is(err, ErrLoginRequired) {
@@ -150,21 +130,20 @@ func (m *Manager) Status() (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
-	return Status{SignedIn: true, RefreshNeeded: !m.now().Add(refreshWindow).Before(c.ExpiresAt),
-		ExpiryMarker: fmt.Sprintf("%d", c.ExpiresAt.UnixNano())}, nil
+	marker := fmt.Sprintf("%d", c.ExpiresAt.UnixNano())
+	if !m.now().Before(c.ExpiresAt) {
+		return Status{Expired: true, ExpiryMarker: marker}, nil
+	}
+	return Status{SignedIn: true, ExpiryMarker: marker}, nil
 }
 
 func (m *Manager) Logout(ctx context.Context) error { return m.store.Logout(ctx) }
 
+// tokenResponse binds only what pane keeps. a refresh token in the response
+// is ignored: pane never renews a credential.
 type tokenResponse struct {
-	AccessToken  string
-	RefreshToken string
-	ExpiresIn    int
-}
-
-func (m *Manager) refresh(ctx context.Context, token string) (*Credential, error) {
-	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {token}, "client_id": {ClientID}}
-	return m.tokenRequest(ctx, form)
+	AccessToken string
+	ExpiresIn   int
 }
 
 func (m *Manager) tokenRequest(ctx context.Context, form url.Values) (*Credential, error) {
@@ -179,22 +158,22 @@ func (m *Manager) tokenRequest(ctx context.Context, form url.Values) (*Credentia
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, &RefreshError{Rejected: true, Status: resp.StatusCode}
+		return nil, &TokenError{Rejected: true, Status: resp.StatusCode}
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, &RefreshError{Status: resp.StatusCode}
+		return nil, &TokenError{Status: resp.StatusCode}
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64*1024+1))
 	if err != nil || len(raw) > 64*1024 {
 		return nil, errors.New("invalid token response")
 	}
 	var tr tokenResponse
-	if dd.BindJSON(&tr, raw) != nil || tr.AccessToken == "" || tr.RefreshToken == "" || tr.ExpiresIn <= 0 {
+	if dd.BindJSON(&tr, raw) != nil || tr.AccessToken == "" || tr.ExpiresIn <= 0 {
 		return nil, errors.New("invalid token response")
 	}
 	account, err := AccountIDFromJWT(tr.AccessToken)
 	if err != nil {
 		return nil, err
 	}
-	return &Credential{Access: tr.AccessToken, Refresh: tr.RefreshToken, ExpiresAt: m.now().Add(time.Duration(tr.ExpiresIn) * time.Second), AccountID: account}, nil
+	return &Credential{Access: tr.AccessToken, ExpiresAt: m.now().Add(time.Duration(tr.ExpiresIn) * time.Second), AccountID: account}, nil
 }
