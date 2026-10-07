@@ -837,7 +837,7 @@ the key principle: tool errors are not stream errors. when a tool fails, pane in
 
 | failure | backend behavior | frontend rendering |
 |---|---|---|
-| connection refused or HTTP 4xx/5xx | emit `event: error` with `code: upstream` (`auth` or `allowance` for subscription 401/403/429), then `turn_end`; close stream | error shown in conversation; the alias's `last_error` reports it without disabling the alias |
+| connection refused or HTTP 4xx/5xx | emit `event: error` with `code: upstream` (`auth` or `allowance` for subscription 401/403/429), then `turn_end`; close stream. on the subscription route the message carries the provider's own code and message, from the stream's `error` event, a `response.failed` terminal, or a non-200 body's `error` object, `detail`, or text, collapsed to one line and capped at 512 bytes; `auth` failures keep the fixed sign-in guidance instead | error shown in conversation; the alias's `last_error` reports it with a fixed safe message, without disabling the alias |
 | stream read fails or closes before `[DONE]` | emit `event: error` with `code: transport` or `truncated`, respectively; close stream | streaming content preserved, error appended |
 | stream completes with an empty completion (no content, no tool calls) | emit `event: error` with `code: empty_response`, close stream; the message names the cause when the model hit its output token limit while thinking, and the empty round is not committed, so the history stays clean. the fix is a bigger output budget: the backend's default, or pane's `max_tokens` setting for the model | error shown in conversation |
 | malformed upstream SSE | log warning, skip malformed chunk, continue | invisible to user unless it corrupts the response |

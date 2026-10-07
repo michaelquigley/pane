@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/michaelquigley/df/dd"
 	"github.com/michaelquigley/pane/internal/auth"
@@ -268,11 +269,18 @@ func TestTerminalBackfillAndToolsWithheld(t *testing.T) {
 
 func TestTerminalFailures(t *testing.T) {
 	creds := &fakeCredentials{account: "acct-pane-test-a", token: "A"}
-	cases := []struct{ name, stream, kind string }{
-		{"missing", "data: {\"type\":\"response.created\"}\n\n", "truncated"},
-		{"incomplete", "data: {\"type\":\"response.incomplete\",\"response\":{\"status\":\"incomplete\",\"incomplete_details\":{\"reason\":\"max_output_tokens\"}}}\n\n", "incomplete"},
-		{"contradictory", "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"failed\",\"output\":[]}}\n\n", "protocol"},
-		{"budget", "data: " + strings.Repeat(" ", maxRoundBytes) + "\n", "budget"},
+	cases := []struct{ name, stream, kind, reason string }{
+		{"missing", "data: {\"type\":\"response.created\"}\n\n", "truncated", ""},
+		{"incomplete", "data: {\"type\":\"response.incomplete\",\"response\":{\"status\":\"incomplete\",\"incomplete_details\":{\"reason\":\"max_output_tokens\"}}}\n\n", "incomplete", ""},
+		{"contradictory", "data: {\"type\":\"response.completed\",\"response\":{\"status\":\"failed\",\"output\":[]}}\n\n", "protocol", ""},
+		{"budget", "data: " + strings.Repeat(" ", maxRoundBytes) + "\n", "budget", ""},
+		// the provider's own explanation is carried into the reason on every
+		// failure path, so a failed round can be acted on from the log.
+		{"error event", "data: {\"type\":\"error\",\"code\":\"server_error\",\"message\":\"The server had an error\\nwhile processing your request.\"}\n\n", "upstream", "generation failed ('server_error': 'The server had an error while processing your request.')"},
+		{"nested error event", "data: {\"type\":\"error\",\"error\":{\"code\":\"rate_limit_exceeded\",\"message\":\"slow down\"}}\n\n", "allowance", "('rate_limit_exceeded': 'slow down')"},
+		{"bare error event", "data: {\"type\":\"error\"}\n\n", "upstream", "generation failed"},
+		{"failed terminal", "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"invalid_request\",\"message\":\"Item with id 'fc_1' not found.\"}}}\n\n", "upstream", "('invalid_request': 'Item with id 'fc_1' not found.')"},
+		{"failed terminal auth", "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"invalid_token\"}}}\n\n", "auth", "('invalid_token')"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -282,7 +290,60 @@ func TestTerminalFailures(t *testing.T) {
 			if !errors.As(err, &roundErr) || roundErr.Kind != tc.kind {
 				t.Fatalf("got %v, want %s", err, tc.kind)
 			}
+			if tc.reason != "" && !strings.Contains(roundErr.Reason, tc.reason) {
+				t.Fatalf("reason %q lacks %q", roundErr.Reason, tc.reason)
+			}
+			if tc.name == "bare error event" && roundErr.Reason != tc.reason {
+				t.Fatalf("empty detail decorated the reason: %q", roundErr.Reason)
+			}
 		})
+	}
+}
+
+func TestStatusFailuresCarryBodyDetail(t *testing.T) {
+	creds := &fakeCredentials{account: "acct-pane-test-a", token: "A"}
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		kind   string
+		reason string
+	}{
+		{"error object", 400, `{"error":{"type":"invalid_request_error","code":"model_not_supported","message":"The 'gpt-6-astra' model requires a newer version of Codex."}}`, "upstream", "generation failed (status 400: 'model_not_supported: The 'gpt-6-astra' model requires a newer version of Codex.')"},
+		{"detail string", 400, `{"detail":"Unsupported parameter: max_output_tokens"}`, "upstream", "generation failed (status 400: 'Unsupported parameter: max_output_tokens')"},
+		{"plain text", 502, "bad gateway\n", "upstream", "generation failed (status 502: 'bad gateway')"},
+		{"empty", 500, "", "upstream", "generation failed (status 500)"},
+		{"allowance", 429, `{"error":{"code":"usage_limit_reached","message":"limit"}}`, "allowance", "generation failed (status 429: 'usage_limit_reached: limit')"},
+		{"auth keeps guidance", 401, `{"detail":"Unauthorized"}`, "auth", "run 'pane auth login openai'"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newAdapter(t, creds, transportFunc(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body)), Header: make(http.Header)}, nil
+			}))
+			_, err := a.Round(context.Background(), baseRequest(), func(llm.RoundEvent) {})
+			var roundErr *llm.RoundError
+			if !errors.As(err, &roundErr) || roundErr.Kind != tc.kind {
+				t.Fatalf("got %v, want %s", err, tc.kind)
+			}
+			if !strings.Contains(roundErr.Reason, tc.reason) {
+				t.Fatalf("reason %q lacks %q", roundErr.Reason, tc.reason)
+			}
+			if tc.kind == "auth" && strings.Contains(roundErr.Reason, "Unauthorized") {
+				t.Fatalf("auth reason carried the body: %q", roundErr.Reason)
+			}
+		})
+	}
+}
+
+func TestFailureDetailIsOneBoundedLine(t *testing.T) {
+	long := strings.Repeat("é", maxFailureDetail)
+	got := failureDetail("  a\n\tb  " + long)
+	if !strings.HasPrefix(got, "a b ") || !strings.HasSuffix(got, "...") || len(got) > maxFailureDetail+len("...") || !utf8.ValidString(got) {
+		t.Fatalf("bad detail: len %d, prefix %q", len(got), got[:8])
+	}
+	if failureReason("", "") != "generation failed" || failureReason("c", "") != "generation failed ('c')" || failureReason("", "m") != "generation failed ('m')" {
+		t.Fatal("unexpected reason shapes")
 	}
 }
 

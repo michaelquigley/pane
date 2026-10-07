@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/michaelquigley/df/dd"
 	"github.com/michaelquigley/pane/internal/auth"
 	"github.com/michaelquigley/pane/internal/config"
 	"github.com/michaelquigley/pane/internal/llm"
@@ -101,9 +102,12 @@ func (a *Adapter) Round(ctx context.Context, request llm.RoundRequest, emit func
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1024))
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
 		kind := "upstream"
 		reason := fmt.Sprintf("generation failed (status %d)", resp.StatusCode)
+		if detail := errorBodyDetail(body); detail != "" {
+			reason = fmt.Sprintf("generation failed (status %d: '%s')", resp.StatusCode, detail)
+		}
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 			kind = "auth"
 			reason = fmt.Sprintf("the provider rejected the subscription credentials (status %d); run 'pane auth login openai'", resp.StatusCode)
@@ -118,6 +122,40 @@ func (a *Adapter) Round(ctx context.Context, request llm.RoundRequest, emit func
 
 var _ llm.RoundAdapter = (*Adapter)(nil)
 var _ Credentials = (*auth.Manager)(nil)
+
+// maxErrorBody bounds how much of a non-200 response body is read for its
+// diagnostic detail.
+const maxErrorBody = 4096
+
+// errorBody is the typed view over a non-200 response body. the route has
+// answered both with the Responses `error` object and with a bare `detail`
+// string; either is carried into the failure reason, and anything else falls
+// back to the body text itself.
+type errorBody struct {
+	Error  *providerError `dd:",+nullable"`
+	Detail string         `dd:",+nullable"`
+	Extra  map[string]any `dd:",+extra"`
+}
+
+// errorBodyDetail extracts the provider's explanation from a non-200 body:
+// the error object's code and message, else `detail`, else the body text,
+// collapsed to one bounded line. an empty body yields "".
+func errorBodyDetail(body []byte) string {
+	if tree, err := dd.DecodeStrictJSON(body); err == nil {
+		var parsed errorBody
+		if err := dd.Bind(&parsed, tree, wireBindOpts); err == nil {
+			switch {
+			case parsed.Error != nil && parsed.Error.Code != "" && parsed.Error.Message != "":
+				return failureDetail(parsed.Error.Code + ": " + parsed.Error.Message)
+			case parsed.Error != nil && (parsed.Error.Code != "" || parsed.Error.Message != ""):
+				return failureDetail(parsed.Error.Code + parsed.Error.Message)
+			case parsed.Detail != "":
+				return failureDetail(parsed.Detail)
+			}
+		}
+	}
+	return failureDetail(string(body))
+}
 
 // requestBody is the Responses generation request pane sends. input holds
 // wire trees: dd-unbound maps for constructed items and strict-decoded trees

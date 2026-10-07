@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
+	"unicode/utf8"
 
 	"github.com/michaelquigley/df/dd"
 	"github.com/michaelquigley/pane/internal/llm"
@@ -41,6 +42,7 @@ type streamEvent struct {
 	OutputIndex int               `dd:",+nullable"`
 	Delta       string            `dd:",+nullable"`
 	Arguments   string            `dd:",+nullable"`
+	Message     string            `dd:",+nullable"`
 	Item        json.RawMessage   `dd:"-"`
 	Response    *terminalResponse `dd:",+nullable"`
 	Code        string            `dd:",+nullable"`
@@ -145,18 +147,11 @@ func parseStream(ctx context.Context, body io.Reader, emit func(llm.RoundEvent),
 			return llm.RoundFinal{}, &llm.RoundError{Kind: "protocol", Reason: "negative output index"}
 		}
 		if event.Type == "error" {
-			kind := "upstream"
-			code := event.Code
+			code, message := event.Code, event.Message
 			if event.Error != nil {
-				code = event.Error.Code
+				code, message = event.Error.Code, event.Error.Message
 			}
-			if code == "invalid_api_key" || code == "unauthorized" {
-				kind = "auth"
-			}
-			if code == "usage_limit_reached" || code == "rate_limit_exceeded" {
-				kind = "allowance"
-			}
-			return llm.RoundFinal{}, &llm.RoundError{Kind: kind, Reason: "generation failed"}
+			return llm.RoundFinal{}, &llm.RoundError{Kind: classifyProviderCode(code), Reason: failureReason(code, message)}
 		}
 		slot := slots[event.OutputIndex]
 		if slot == nil {
@@ -248,11 +243,11 @@ func parseStream(ctx context.Context, body io.Reader, emit func(llm.RoundEvent),
 		return llm.RoundFinal{}, &llm.RoundError{Kind: "cancelled", Reason: "generation cancelled"}
 	}
 	if (terminalType == "response.failed" || terminalType == "response.done") && terminal.Status == "failed" {
-		kind := "upstream"
+		code, message := "", ""
 		if terminal.Error != nil {
-			kind = classifyProviderCode(terminal.Error.Code)
+			code, message = terminal.Error.Code, terminal.Error.Message
 		}
-		return llm.RoundFinal{}, &llm.RoundError{Kind: kind, Reason: "generation failed"}
+		return llm.RoundFinal{}, &llm.RoundError{Kind: classifyProviderCode(code), Reason: failureReason(code, message)}
 	}
 	if terminal.Status != "completed" || terminalType != "response.completed" && terminalType != "response.done" || terminal.Error != nil || terminal.IncompleteDetails != nil {
 		return llm.RoundFinal{}, &llm.RoundError{Kind: "protocol", Reason: "contradictory terminal status"}
@@ -513,4 +508,41 @@ func classifyProviderCode(code string) string {
 	default:
 		return "upstream"
 	}
+}
+
+// maxFailureDetail bounds the provider text carried in a failure reason. the
+// text is diagnostic only: it reaches the log and the conversation's error
+// line, never a request.
+const maxFailureDetail = 512
+
+// failureReason names a failed generation with whatever the provider said
+// about it. a round that fails with only "generation failed" leaves nothing
+// to act on, so the provider's code and message are carried through, each
+// quoted and collapsed to one bounded line.
+func failureReason(code, message string) string {
+	reason := "generation failed"
+	code, message = failureDetail(code), failureDetail(message)
+	switch {
+	case code != "" && message != "":
+		reason += fmt.Sprintf(" ('%s': '%s')", code, message)
+	case code != "":
+		reason += fmt.Sprintf(" ('%s')", code)
+	case message != "":
+		reason += fmt.Sprintf(" ('%s')", message)
+	}
+	return reason
+}
+
+// failureDetail collapses provider text to one line of printable runes and
+// truncates it to maxFailureDetail.
+func failureDetail(text string) string {
+	text = strings.Join(strings.Fields(text), " ")
+	if len(text) > maxFailureDetail {
+		cut := maxFailureDetail
+		for cut > 0 && !utf8.RuneStart(text[cut]) {
+			cut--
+		}
+		text = text[:cut] + "..."
+	}
+	return text
 }
