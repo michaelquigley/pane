@@ -1,5 +1,4 @@
 researching:
-  - authentication.md
   - per-model-thinking-control.md
   - auto-compaction.md
   - write-only-tool-approval.md
@@ -20,6 +19,7 @@ horizon:
   - mermaid.md
   - frontend-tests-for-the-session-hook.md
   - toolbar-screen-reader-announcer.md
+  - authentication.md
 inbox:
   - local-token-estimation.md
   - artifact-file-and-diff-inspection.md

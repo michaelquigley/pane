@@ -1,6 +1,6 @@
 ---
 title: authentication
-state: researching
+state: horizon
 created: 2026-08-17
 tags: [epic]
 milestone: v0.1.x
