@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.2
+
 FIX: typing in the composer no longer slows down as a conversation grows. every keystroke used to re-render the whole transcript, re-parsing each message's markdown and re-highlighting every code block; the draft now lives in its own composer component, and committed messages re-render only when they change. streaming benefits too: each delta re-renders only the in-progress reply instead of the full history.
 
 ## v0.1.1
