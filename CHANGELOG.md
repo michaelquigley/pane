@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+FIX: typing in the composer no longer slows down as a conversation grows. every keystroke used to re-render the whole transcript, re-parsing each message's markdown and re-highlighting every code block; the draft now lives in its own composer component, and committed messages re-render only when they change. streaming benefits too: each delta re-renders only the in-progress reply instead of the full history.
+
 ## v0.1.1
 
 FEATURE: pane can now bind model aliases to explicit OpenAI-compatible connections. each registry entry can select its own endpoint, upstream model id, bearer key, context window, and output limit, while omitted endpoint and key values inherit the top-level connection. the configured aliases are the complete model list, chat rejects unknown aliases before streaming, and usage remains attached to the alias selected for that turn. configurations without a registry keep the original single-endpoint discovery behavior.

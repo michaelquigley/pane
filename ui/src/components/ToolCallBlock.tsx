@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ActiveToolCall, RecoveryPlaceholder } from '../types'
 
 // a recovered card states what pane knows, never a success or failure mark.
@@ -39,14 +39,7 @@ export function ToolCallBlock({ toolCall, onApprove, onDeny }: Props) {
     }
   }
 
-  let formattedArgs = toolCall.argumentsSoFar
-  try {
-    if (formattedArgs) {
-      formattedArgs = JSON.stringify(JSON.parse(formattedArgs), null, 2)
-    }
-  } catch {
-    // keep raw if not valid JSON yet
-  }
+  const formattedArgs = useMemo(() => formatArguments(toolCall.argumentsSoFar), [toolCall.argumentsSoFar])
 
   return (
     <div className={`tool-call-block tool-call-${toolCall.status}`}>
@@ -80,6 +73,16 @@ export function ToolCallBlock({ toolCall, onApprove, onDeny }: Props) {
       )}
     </div>
   )
+}
+
+function formatArguments(args: string): string {
+  if (!args) return args
+  try {
+    return JSON.stringify(JSON.parse(args), null, 2)
+  } catch {
+    // keep raw if not valid JSON yet
+    return args
+  }
 }
 
 function toolStatusLabel(status: ActiveToolCall['status']): string {

@@ -2,6 +2,10 @@ import { useRef, useEffect, useState, type KeyboardEvent, type ReactNode } from 
 import { MessageBubble } from './MessageBubble'
 import type { Message, ActiveToolCall } from '../types'
 
+// one shared object, so the memoized streaming bubble compares equal when
+// the view re-renders for an unrelated reason
+const streamingPlaceholder: Message = { role: 'assistant', content: null }
+
 interface Props {
   messages: Message[]
   isStreaming: boolean
@@ -43,39 +47,11 @@ export function ChatView({
   onAbort,
   onToggleThinkingCollapsed,
 }: Props) {
-  const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-
-  useEffect(() => {
-    resizeTextarea(textareaRef.current)
-  }, [input])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, streamingContent, streamingThinking, activeToolCalls])
-
-  useEffect(() => {
-    if (!isStreaming) {
-      textareaRef.current?.focus()
-    }
-  }, [isStreaming, messages.length])
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      void handleSend()
-    }
-  }
-
-  const handleSend = async () => {
-    // the draft stays until the request has actually started: a refused
-    // send, a failed pre-send save, or a rejected request leaves the typed
-    // text where the reader left it.
-    if (!input.trim() || isStreaming || preparing || !canSend) return
-    const content = input
-    if (await onSend(content)) setInput(current => current === content ? '' : current)
-  }
 
   // visible messages keep their index in the full messages array, so the
   // thinking-collapse toggle addresses the exact message a round committed
@@ -91,14 +67,15 @@ export function ChatView({
             <MessageBubble
               key={index}
               message={msg}
+              messageIndex={index}
               compact={shouldCompactMessage(msg, visibleMessages[i - 1]?.msg)}
-              onToggleThinking={collapsed => onToggleThinkingCollapsed(index, collapsed)}
+              onToggleThinking={onToggleThinkingCollapsed}
             />
           ))}
 
           {isStreaming && (
             <MessageBubble
-              message={{ role: 'assistant', content: null }}
+              message={streamingPlaceholder}
               isStreaming
               streamingContent={streamingContent}
               streamingThinking={streamingThinking}
@@ -123,32 +100,88 @@ export function ChatView({
       {appError && <div className="app-notice">{appError}</div>}
       {sendNotice && <div className="app-notice">{sendNotice}</div>}
 
-      <div className="input-area">
-        <textarea
-          ref={textareaRef}
-          className="chat-input"
-          value={input}
-          onChange={e => {
-            setInput(e.target.value)
-            resizeTextarea(e.target)
-          }}
-          onKeyDown={handleKeyDown}
-          placeholder="Send a message..."
-          rows={1}
-          disabled={isStreaming || preparing}
-        />
-        {isStreaming ? (
-          <button className="send-btn" onClick={onAbort}>Stop</button>
-        ) : (
-          <button
-            className="send-btn"
-            onClick={handleSend}
-            disabled={!input.trim() || !canSend || preparing}
-          >
-            Send
-          </button>
-        )}
-      </div>
+      <Composer
+        isStreaming={isStreaming}
+        preparing={preparing}
+        canSend={canSend}
+        messageCount={messages.length}
+        onSend={onSend}
+        onAbort={onAbort}
+      />
+    </div>
+  )
+}
+
+interface ComposerProps {
+  isStreaming: boolean
+  preparing: boolean
+  canSend: boolean
+  // focus returns to the composer when a turn ends or the history changes
+  messageCount: number
+  onSend: (content: string) => Promise<boolean>
+  onAbort: () => void
+}
+
+// the draft lives here, not in ChatView: a keystroke re-renders only the
+// composer, never the transcript, whose markdown parse and code highlighting
+// grow with the conversation. the draft survives conversation switches
+// because ChatView is not keyed per conversation.
+function Composer({ isStreaming, preparing, canSend, messageCount, onSend, onAbort }: ComposerProps) {
+  const [input, setInput] = useState('')
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    resizeTextarea(textareaRef.current)
+  }, [input])
+
+  useEffect(() => {
+    if (!isStreaming) {
+      textareaRef.current?.focus()
+    }
+  }, [isStreaming, messageCount])
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      void handleSend()
+    }
+  }
+
+  const handleSend = async () => {
+    // the draft stays until the request has actually started: a refused
+    // send, a failed pre-send save, or a rejected request leaves the typed
+    // text where the reader left it.
+    if (!input.trim() || isStreaming || preparing || !canSend) return
+    const content = input
+    if (await onSend(content)) setInput(current => current === content ? '' : current)
+  }
+
+  return (
+    <div className="input-area">
+      <textarea
+        ref={textareaRef}
+        className="chat-input"
+        value={input}
+        onChange={e => {
+          setInput(e.target.value)
+          resizeTextarea(e.target)
+        }}
+        onKeyDown={handleKeyDown}
+        placeholder="Send a message..."
+        rows={1}
+        disabled={isStreaming || preparing}
+      />
+      {isStreaming ? (
+        <button className="send-btn" onClick={onAbort}>Stop</button>
+      ) : (
+        <button
+          className="send-btn"
+          onClick={handleSend}
+          disabled={!input.trim() || !canSend || preparing}
+        >
+          Send
+        </button>
+      )}
     </div>
   )
 }

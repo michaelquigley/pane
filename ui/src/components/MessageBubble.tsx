@@ -1,5 +1,5 @@
-import { lazy, Suspense } from 'react'
-import ReactMarkdown from 'react-markdown'
+import { lazy, memo, Suspense } from 'react'
+import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { ToolCallBlock } from './ToolCallBlock'
 import { ThinkingBlock } from './ThinkingBlock'
@@ -96,18 +96,25 @@ interface Props {
   streamingContent?: string
   streamingThinking?: string
   activeToolCalls?: Map<number, ActiveToolCall>
+  // the message's index in the full history, which onToggleThinking addresses
+  messageIndex?: number
   compact?: boolean
   onApprove?: (id: string) => void
   onDeny?: (id: string) => void
-  onToggleThinking?: (collapsed: boolean) => void
+  onToggleThinking?: (messageIndex: number, collapsed: boolean) => void
 }
 
-export function MessageBubble({
+// memoized: a committed message re-renders only when its own props change.
+// rendering is the expensive part of a long conversation (markdown parse,
+// code highlighting), so every prop the transcript passes must stay
+// referentially stable -- no per-render closures or object literals.
+export const MessageBubble = memo(function MessageBubble({
   message,
   isStreaming,
   streamingContent,
   streamingThinking,
   activeToolCalls,
+  messageIndex,
   compact,
   onApprove,
   onDeny,
@@ -147,7 +154,9 @@ export function MessageBubble({
               thinking={thinking}
               collapsed={!!message.thinkingCollapsed}
               streaming={!!isStreaming}
-              onToggle={onToggleThinking}
+              onToggle={onToggleThinking && messageIndex !== undefined
+                ? collapsed => onToggleThinking(messageIndex, collapsed)
+                : undefined}
             />
           )}
           {toolCalls.length > 0 && (
@@ -177,27 +186,28 @@ export function MessageBubble({
       )}
     </div>
   )
+})
+
+const remarkPlugins = [remarkGfm]
+
+const markdownComponents: Components = {
+  code({ className, children, ...props }) {
+    const match = /language-(\w+)/.exec(className || '')
+    const code = String(children).replace(/\n$/, '')
+    if (match) {
+      return (
+        <Suspense fallback={<pre>{code}</pre>}>
+          <MarkdownCodeBlock language={match[1]} code={code} />
+        </Suspense>
+      )
+    }
+    return <code className={className} {...props}>{children}</code>
+  },
 }
 
 function MarkdownBody({ content }: { content: string }) {
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        code({ className, children, ...props }) {
-          const match = /language-(\w+)/.exec(className || '')
-          const code = String(children).replace(/\n$/, '')
-          if (match) {
-            return (
-              <Suspense fallback={<pre>{code}</pre>}>
-                <MarkdownCodeBlock language={match[1]} code={code} />
-              </Suspense>
-            )
-          }
-          return <code className={className} {...props}>{children}</code>
-        },
-      }}
-    >
+    <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
       {replaceLatexSymbolSpans(content)}
     </ReactMarkdown>
   )
